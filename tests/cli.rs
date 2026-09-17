@@ -43,6 +43,30 @@ fn invalid_invocations_cannot_report_success() {
         &["ação-desconhecida"][..],
         &["--version", "extra"][..],
         &["--help", "--version"][..],
+        &["changelog"][..],
+        &["changelog", "--base", "main"][..],
+        &["changelog", "--base", "--pr", "1"][..],
+        &["changelog", "--base", "main", "--pr", "0"][..],
+        &[
+            "changelog",
+            "--base",
+            "main",
+            "--pr",
+            "1",
+            "--check",
+            "--dry-run",
+        ][..],
+        &[
+            "changelog",
+            "--base",
+            "main",
+            "--pr",
+            "1",
+            "--check",
+            "--yes",
+        ][..],
+        &["changelog", "--base", "main", "--pr", "1", "--pr", "2"][..],
+        &["changelog", "--base", "main", "--pr", "1", "--timeout"][..],
     ] {
         let output = invoke(arguments);
         assert_eq!(output.status.code(), Some(2));
@@ -50,5 +74,23 @@ fn invalid_invocations_cannot_report_success() {
         let error = String::from_utf8(output.stderr).expect("erro em UTF-8");
         assert!(error.contains("Erro:"));
         assert!(error.contains("--help"));
+    }
+}
+
+#[test]
+fn changelog_help_explains_pr_review_without_a_repository() {
+    let output = invoke(&["changelog", "--help"]);
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "--base",
+        "--pr",
+        "--head",
+        "--dry-run",
+        "--check",
+        "--context-file",
+        "Codex",
+    ] {
+        assert!(help.contains(expected));
     }
 }

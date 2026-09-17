@@ -1,3 +1,4 @@
+mod changelog;
 mod cli;
 mod commit;
 mod executable;
@@ -28,6 +29,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(cli::Action::Commit(options)) => finish(commit::run(options)),
+        Ok(cli::Action::Changelog(options)) => finish(changelog::run(options)),
         Err(error) => {
             eprintln!("Erro: {error}\nUse clean-dev-cycle --help para consultar o uso.");
             ExitCode::from(2)

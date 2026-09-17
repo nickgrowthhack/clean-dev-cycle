@@ -1,5 +1,7 @@
 # Changelog
 
+Cada entrada resume a entrega completa de um pull request, revisada antes do merge.
+
 ## [Não lançado]
 
 <!-- clean-dev-cycle:pr:3:start -->

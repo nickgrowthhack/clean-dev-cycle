@@ -28,6 +28,24 @@ pub fn generate(
     context: &str,
     cancelled: &AtomicBool,
 ) -> Result<String> {
+    generate_with(
+        options,
+        diff,
+        context,
+        cancelled,
+        INSTRUCTIONS,
+        message::validate,
+    )
+}
+
+pub fn generate_with(
+    options: &Options,
+    diff: &str,
+    context: &str,
+    cancelled: &AtomicBool,
+    instructions: &str,
+    validate: fn(&str) -> Result<String>,
+) -> Result<String> {
     let executable = executable::codex(&options.codex)?;
     let directory =
         tempfile::tempdir().map_err(|e| format!("não foi possível preparar a geração: {e}."))?;
@@ -40,7 +58,7 @@ pub fn generate(
     }).to_string()).map_err(|e| e.to_string())?;
     let preferences = model_preferences()?;
     let mut prompt = format!(
-        "{INSTRUCTIONS}\n\nDADOS DA MUDANÇA (JSON):\n{}",
+        "{instructions}\n\nDADOS DA MUDANÇA (JSON):\n{}",
         json!({"diff": diff, "context": context})
     );
     for attempt in 0..2 {
@@ -119,12 +137,12 @@ pub fn generate(
         }
         audit_events(&output.stdout)?;
         let result = read_text(&response, message::MAX_MESSAGE_BYTES * 2)
-            .and_then(|text| parse_response(&text));
+            .and_then(|text| parse_response(&text, validate));
         match result {
             Ok(Answer::Message(text)) => return Ok(text),
             Ok(Answer::NeedsContext(reason)) => {
                 return Err(format!(
-                    "o Codex precisa de mais contexto: {reason}\nExplique a intenção com --context-file ou revise a seleção no stage."
+                    "o Codex precisa de mais contexto: {reason}\nExplique a intenção com --context-file ou revise as alterações selecionadas."
                 ));
             }
             Err(error) if attempt == 0 => {
@@ -146,7 +164,7 @@ enum Answer {
     NeedsContext(String),
 }
 
-fn parse_response(text: &str) -> Result<Answer> {
+fn parse_response(text: &str, validate: fn(&str) -> Result<String>) -> Result<Answer> {
     let value: Value =
         serde_json::from_str(text).map_err(|_| "a resposta deve ser um objeto JSON válido.")?;
     let object = value
@@ -171,7 +189,7 @@ fn parse_response(text: &str) -> Result<Answer> {
         }
         return Ok(Answer::NeedsContext(process::diagnostic(reason.as_bytes())));
     }
-    Ok(Answer::Message(message::validate(message)?))
+    Ok(Answer::Message(validate(message)?))
 }
 
 fn audit_events(bytes: &[u8]) -> Result<()> {

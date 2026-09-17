@@ -6,7 +6,7 @@ entregas pequenas, verificáveis e ligadas a um objetivo comum.
 - [Estratégia de branching](docs/branching.md): nomes, integração e dependências entre entregas.
 - [Plano do ciclo inicial](docs/plans/initial-cycle.md): trabalho atual, migração e critérios de conclusão.
 
-CLI em Rust para automatizar commits e releases.
+CLI em Rust para automatizar commits, revisar entregas de pull requests para o changelog e apoiar o ciclo de releases.
 
 ## Criar um commit
 
@@ -48,6 +48,41 @@ O comando preserva a seleção parcial de arquivos e executa os hooks existentes
 A integração usa a autenticação padrão OpenAI do Codex e reaproveita `model` e `model_reasoning_effort` do `config.toml`. As demais configurações pessoais, plugins e ferramentas ficam desativadas durante a geração, realizada em um diretório temporário separado. É necessária uma versão do Codex CLI com suporte a `exec --ignore-user-config` e `--output-schema`.
 
 Nesta versão, o diff precisa ser textual, UTF-8 e ter até 128 KiB; arquivos binários, submódulos e operações de merge/rebase em andamento são recusados. O contexto adicional aceita até 16 KiB. Nomes comuns de arquivos sensíveis, como `.env` e chaves privadas, são bloqueados; isso não substitui a revisão do conteúdo selecionado. Uma resposta inválida do Codex recebe no máximo uma tentativa de correção.
+
+## Atualizar o changelog de um PR
+
+Cada entrada representa a **entrega completa de um pull request**. O Codex revisa o diff acumulado entre a base comum e a branch do PR e propõe uma síntese em português: resultado, impacto para quem usa e eventuais incompatibilidades. As mensagens individuais de commit não são usadas como uma lista de mudanças.
+
+Com os commits da entrega concluídos, execute na branch do PR, **antes do merge**, usando a referência local de destino atualizada e o número real do PR:
+
+```sh
+clean-dev-cycle changelog --base origin/main --pr 42 --dry-run
+clean-dev-cycle changelog --base origin/main --pr 42
+```
+
+O primeiro comando mostra a proposta sem escrever; o segundo permite confirmar, editar ou cancelar. Na edição, mantenha um título `###`, uma linha em branco e a síntese, terminando com uma linha contendo apenas `.`. Depois de confirmar, revise `CHANGELOG.md`, selecione-o com `git add CHANGELOG.md` e inclua-o no mesmo PR. `--yes` confirma sem interação.
+
+O arquivo é criado na raiz quando necessário. Uma nova entrada vai para `Não lançado`; novas revisões do mesmo PR substituem somente a entrada correspondente. Notas manuais, entradas de outros PRs e seções de versões existentes são preservadas. Não remova nem altere os comentários `clean-dev-cycle`: eles identificam o PR e o diff revisado. Ao organizar uma release, você pode mover a entrada inteira, com os comentários, para a seção da versão.
+
+A seleção equivale a `git diff BASE...HEAD`, excluindo o próprio `CHANGELOG.md`. Isso reúne os resultados de todos os commits do PR, sem incluir mudanças independentes que chegaram à branch de destino. Alterações no stage ou ainda não commitadas ficam fora da revisão. O comando não cria commits, altera o stage, faz fetch, consulta o GitHub ou publica conteúdo; `--pr` identifica a entrada e `--base`/`--head` definem o intervalo local que você está associando a esse PR. Para revisar outra branch, informe `--head BRANCH`.
+
+Use `--context-file contexto.txt` para acrescentar a intenção da entrega ou esclarecer uma dúvida levantada pelo Codex. As opções `--model`, `--codex` e `--timeout` funcionam como no comando `commit`. A geração, inclusive em `--dry-run`, usa IA e pode consumir cota. O diff completo precisa ser textual, UTF-8 e ter até 128 KiB; diffs maiores, binários, submódulos, nomes sensíveis e histórico raso são recusados antes de chamar a IA. Nenhuma parte do diff é truncada para produzir uma síntese parcial.
+
+Para conferir se a entrada corresponde ao diff e ao contexto atuais, sem chamar a IA nem escrever:
+
+```sh
+clean-dev-cycle changelog --base origin/main --pr 42 --check
+```
+
+O código de saída é zero quando a entrada está atualizada e não zero quando está ausente, desatualizada ou há um erro. Reutilize o mesmo `--context-file`, caso tenha sido usado na geração. Como o changelog é excluído da comparação, fazer commit da própria entrada não exige outra revisão. Repetir o comando com o mesmo diff e contexto também não chama a IA novamente. A verificação confirma a correspondência com a revisão registrada; a qualidade da síntese continua sendo revisada no PR.
+
+Em CI, faça checkout da branch real do PR, obtenha o histórico completo e a referência de destino antes de executar `--check`. Por exemplo, com essas referências já disponíveis:
+
+```sh
+clean-dev-cycle changelog --base origin/main --head branch-do-pr --pr 42 --check
+```
+
+O fluxo não exige versionar cada commit nem gera releases ou tags. A organização posterior de vários PRs em uma versão permanece explícita no changelog.
 
 ## Desenvolvimento
 
