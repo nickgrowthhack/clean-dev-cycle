@@ -4,6 +4,17 @@ Cada entrada resume a entrega completa de um pull request, revisada antes do mer
 
 ## [Não lançado]
 
+<!-- clean-dev-cycle:pr:4:start -->
+<!-- clean-dev-cycle:fingerprint:5f82fb2e99ec22c193c4e69eeeaf146bd92ebe2c -->
+### Changelog com síntese da entrega completa por PR (#4)
+
+A CLI passa a oferecer `changelog --base REF --pr NÚMERO`, que usa o Codex para propor uma síntese em português do diff acumulado do PR desde a base comum. A revisão considera apenas alterações commitadas, excluindo o próprio changelog, e permite confirmar, editar, cancelar ou visualizar a proposta com `--dry-run`.
+
+O comando cria ou atualiza uma entrada por PR em `CHANGELOG.md`, preservando notas manuais, outros PRs e versões existentes. Novas entradas ficam em `Não lançado`; revisões substituem a entrada correspondente. A gravação é interrompida se detectar alterações concorrentes no repositório, nas referências, no contexto ou no changelog.
+
+Com `--check`, é possível verificar se a entrada corresponde ao diff e ao contexto atuais, sem IA nem escrita. Repetir a geração com esses dados inalterados também dispensa nova chamada à IA. O fluxo exige referências locais atualizadas e histórico completo, recusa diffs incompletos ou incompatíveis com os limites documentados e deixa a inclusão da nota no commit a cargo de quem usa.
+<!-- clean-dev-cycle:pr:4:end -->
+
 <!-- clean-dev-cycle:pr:3:start -->
 <!-- clean-dev-cycle:fingerprint:78b9be0d85feffa79d1d587dbffdc90f12d2977f -->
 ### Geração e revisão de commits com Codex (#3)
