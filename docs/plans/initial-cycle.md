@@ -20,9 +20,10 @@ próprio plano e PR, dentro deste escopo.
 ## Estado das entregas em 2026-09-17
 
 Este registro representa o estado durante a revisão do
-[PR #3](https://github.com/nickgrowthhack/clean-dev-cycle/pull/3). A CLI permanece
-em andamento até sua integração ser comprovada. A atualização para integrada
-acompanhará o próximo PR do escopo, com o SHA efetivo do merge.
+[PR #4](https://github.com/nickgrowthhack/clean-dev-cycle/pull/4). A CLI está
+integrada. O changelog permanece em andamento até sua integração ser comprovada.
+A atualização para integrado acompanhará o próximo PR do escopo, com o SHA
+efetivo do merge.
 
 Todos os responsáveis são `nick`. Branches de entregas planejadas serão criadas
 quando o trabalho começar. As branches de validação e CI já existem e aguardam
@@ -32,8 +33,8 @@ entregas num único PR.
 | Entrega | Dependências | Estado | Branch | PR |
 | --- | --- | --- | --- | --- |
 | `branching-strategy` | Nenhuma | integrada | `nick/initial-cycle/branching-strategy` | [#2](https://github.com/nickgrowthhack/clean-dev-cycle/pull/2) |
-| `commit-cli` | Nenhuma | em andamento | `nick/initial-cycle/commit-cli` | [#3](https://github.com/nickgrowthhack/clean-dev-cycle/pull/3) |
-| `changelog` | `commit-cli` | planejada | `nick/initial-cycle/changelog` | Ainda não aberto |
+| `commit-cli` | Nenhuma | integrada | `nick/initial-cycle/commit-cli` | [#3](https://github.com/nickgrowthhack/clean-dev-cycle/pull/3) |
+| `changelog` | `commit-cli` | em andamento | `nick/initial-cycle/changelog` | [#4](https://github.com/nickgrowthhack/clean-dev-cycle/pull/4) |
 | `commit-validation` | `changelog` | bloqueada | `nick/initial-cycle/commit-validation` | Ainda não aberto |
 | `ci-delivery` | `commit-validation` | bloqueada | `nick/initial-cycle/ci-delivery` | Ainda não aberto |
 | `main-protection` | `ci-delivery` | planejada | `nick/initial-cycle/main-protection` | Ainda não aberto |
@@ -51,14 +52,20 @@ plano ao fazer essa divisão.
   A árvore integrada foi comparada à entrega validada. A sintaxe dos exemplos
   foi conferida sem executar seus comandos de rebase ou push.
 - **commit-cli:** geração, revisão e criação segura de commits, preservando stage
-  parcial e hooks. A implementação deriva de `73a5cd8`, com autoria e mensagem
-  preservadas. O PR #3 continua a entrega do PR #1. Aceite: código, testes,
-  dependências e workflow iguais à implementação original, README com o guia,
-  notas dos PRs preservadas e validações locais e remotas sobre a base atual.
+  parcial e hooks. Integrada pelo PR #3 no commit
+  `841193a4edb02c31579dd96d929e69e42a50e689`. A implementação de `73a5cd8` teve
+  autoria e mensagem preservadas, mantendo código, testes, dependências e
+  workflow. Passaram formatação, Clippy, 30 testes, build, ajuda, versão,
+  validação de commits, changelog e check-ci local. Linux, Windows e `Qualidade`
+  passaram no SHA do PR. A árvore integrada foi comparada à validada, com o
+  guia e a nota do PR #2 preservados. O PR #3 continua a entrega do PR #1.
 - **changelog:** síntese por PR, preservação de notas anteriores e verificação
   de atualidade sem IA. Aceite: testes de geração, atualização, preservação e
-  `--check`, além da nota do próprio PR. Fonte: incremento de `573c579` sobre
-  `fca7985`, disponível na branch `nick/initial-cycle/commit-validation`.
+  `--check`, além da nota do próprio PR. O PR #4 extrai somente o incremento de
+  `573c579` sobre `fca7985`, aplicado na base `841193a`. Preserva as notas dos
+  PRs #2 e #3. A mensagem mantém autoria e significado, com o corpo dividido
+  em linhas compatíveis com a política atual. A própria CLI desta entrega gera
+  e confere sua nota. Os resultados finais ficam registrados na descrição do PR.
 - **commit-validation:** política compartilhada para mensagens e intervalos de
   commits. Fonte: incremento de `49013d4` sobre `573c579`. Está bloqueada até a
   integração do changelog. Aceite: testes da configuração, limites e mensagens,
@@ -76,11 +83,13 @@ plano ao fazer essa divisão.
   links para versão, tag, release e execuções. Ainda não implementada. Seu plano
   deve definir o contrato com o CI antes da implementação.
 
-A geração das notas e as verificações ainda não incluídas na CLI inicial usam
-`clean-dev-cycle 0.1.0`, compilado da revisão
-`518d3338e0a5699a0f310604e951378cd505373e` no checkout de desenvolvimento. Esse
-binário é uma ferramenta de apoio, não faz parte do diff da CLI inicial e não
-antecipa a integração das capacidades de changelog ou validação.
+As notas dos PRs #2 e #3 foram geradas pela ferramenta de apoio
+`clean-dev-cycle 0.1.0`, compilada da revisão
+`518d3338e0a5699a0f310604e951378cd505373e` no checkout de desenvolvimento.
+No PR #4, a geração e a conferência da nota usam o binário compilado da própria
+entrega. A ferramenta de apoio é usada somente para validar mensagens e executar
+check-ci localmente. Essas verificações ainda não fazem parte da CLI integrada
+e seu uso não antecipa a entrega de validação ou de CI.
 
 ### Proteções observadas e política alvo
 
@@ -89,7 +98,7 @@ regras efetivas. Rebase, squash e merge commit estavam permitidos. Auto-merge e
 exclusão automática de branches estavam desativados. Confirme novamente o estado
 remoto antes de qualquer alteração de configuração.
 
-A política alvo ainda será aplicada em `main-protection`. O PR #3 contém o
+A política alvo ainda será aplicada em `main-protection`. O PR #3 integrou o
 workflow de qualidade da CLI para Linux e Windows. O check `Entrega do PR`
 pertence à entrega `ci-delivery` e ainda não está integrado. Os resultados de
 check-ci executado como ferramenta de apoio são locais, distintos dos checks
@@ -97,13 +106,13 @@ executados pelo GitHub.
 
 ## Integração incremental
 
-1. **Concluir a CLI pelo PR #3.** Preservar o guia, os links no README e a nota
-   do PR #2. Gerar a síntese do PR #3 sobre a base atual, conferir todos os checks
-   e integrar por rebase, exigindo o SHA validado.
-2. **Extrair o changelog.** Depois da CLI, criar `nick/initial-cycle/changelog`
-   sobre a `main` atualizada e reaplicar somente `573c579`. Preservar as notas já
-   integradas ao resolver a criação do changelog. Não reaplicar a implementação
-   da CLI contida nos ancestrais desse commit.
+1. **CLI concluída pelo PR #3.** Integrada por rebase em `841193a`, com os checks
+   aprovados e o guia e a nota do PR #2 preservados.
+2. **Concluir o changelog pelo PR #4.** A branch `nick/initial-cycle/changelog`
+   reaplica somente `573c579` sobre a `main` que contém a CLI. Preservar as notas
+   integradas, gerar a síntese do PR completo e conferir os checks na base atual.
+   Integrar por rebase, exigindo o SHA validado. Não reaplicar a implementação
+   da CLI contida nos ancestrais do incremento.
 3. **Atualizar a validação.** Depois do changelog, reutilizar
    `nick/initial-cycle/commit-validation`, reaplicando somente `49013d4` sobre a
    `main` atualizada. O limite anterior dos commits exclusivos é `573c579`.
