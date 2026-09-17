@@ -1,0 +1,19 @@
+[package]
+name = "clean-dev-cycle"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+description = "Automação de commits e releases para um ciclo de desenvolvimento consistente."
+repository = "https://github.com/nickgrowthhack/clean-dev-cycle"
+readme = "README.md"
+publish = false
+
+[dependencies]
+ctrlc = "3.5"
+git-conventional = "1.1.0"
+serde_json = "1.0"
+tempfile = "3.23"
+toml = "1.1"
+
+[lints.rust]
+unsafe_code = "forbid"
