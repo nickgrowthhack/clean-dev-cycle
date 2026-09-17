@@ -43,7 +43,7 @@ predecessora no identificador. A `main` é a exceção à convenção.
 Uma entrega não ganha outro identificador ao mudar de responsável. Registre a
 transferência e a branch vigente no plano e coordene eventuais renomes com quem
 trabalha nela. Antes de criar uma branch, confira se a entrega já está em curso.
-As branches anteriores à adoção mantêm seus nomes durante a migração documentada.
+Todas as branches de trabalho seguem esta convenção.
 
 ### Registro mínimo
 
