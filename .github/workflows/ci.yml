@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Obter código
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Selecionar GNU no Windows
+        if: runner.os == 'Windows'
+        run: rustup set default-host x86_64-pc-windows-gnu
+
+      - name: Preparar o toolchain fixado
+        run: rustup show
+
+      - name: Conferir as ferramentas GNU no Windows
+        if: runner.os == 'Windows'
+        run: |
+          & (Get-Command as -ErrorAction Stop).Source --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Get-Command dlltool -ErrorAction Stop).Source --version
+          exit $LASTEXITCODE
+
+      - name: Conferir formatação
+        run: cargo fmt --all -- --check
+
+      - name: Executar análise estática
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Testar a CLI e o fluxo de commit
+        run: cargo test --locked
+
+      - name: Compilar para distribuição
+        run: cargo build --release --locked
+
+      - name: Executar o binário de distribuição
+        run: |
+          $binary = if ($IsWindows) { './target/release/clean-dev-cycle.exe' } else { './target/release/clean-dev-cycle' }
+          & $binary --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $binary --version
+          exit $LASTEXITCODE
+
+  quality:
+    name: Qualidade
+    needs: validate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Exigir sucesso nos dois sistemas
+        env:
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+        run: test "$VALIDATION_RESULT" = success
