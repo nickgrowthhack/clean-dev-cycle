@@ -114,17 +114,34 @@ impl Repository {
     }
 
     pub fn diff(&self) -> Result<String> {
-        let names = self.read(&[
-            "diff",
-            "--cached",
-            "--name-only",
-            "--no-renames",
-            "-z",
-            "--",
-        ])?;
+        self.selected_diff(&["--cached"], &[])
+    }
+
+    pub fn diff_between(&self, base: &str, head: &str) -> Result<String> {
+        self.selected_diff(&[base, head], &[".", ":(top,exclude)CHANGELOG.md"])
+    }
+
+    fn selected_diff(&self, selection: &[&str], paths: &[&str]) -> Result<String> {
+        let arguments = |flags: &[&str]| {
+            let mut args = vec!["diff".to_owned()];
+            args.extend(["--ignore-submodules=none", "--no-relative"].map(str::to_owned));
+            args.extend(flags.iter().chain(selection).copied().map(str::to_owned));
+            args.push("--".into());
+            args.extend(paths.iter().copied().map(str::to_owned));
+            args
+        };
+        let read = |flags: &[&str]| {
+            let args = arguments(flags);
+            self.read(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        };
+        let names = read(&["--name-only", "--no-renames", "-z"])?;
         if names.is_empty() {
             return Err(
-                "não há alterações no stage. Selecione os arquivos com git add antes de continuar."
+                if selection == ["--cached"] {
+                    "não há alterações no stage. Selecione os arquivos com git add antes de continuar."
+                } else {
+                    "não há alterações no intervalo do PR além de CHANGELOG.md. Execute na branch do PR antes do merge."
+                }
                     .into(),
             );
         }
@@ -136,24 +153,28 @@ impl Repository {
             }
             if sensitive_path(name) {
                 return Err(format!(
-                    "arquivo potencialmente sensível no stage: {name}. Revise a seleção antes de enviar o diff ao Codex."
+                    "arquivo potencialmente sensível na seleção: {name}. Revise a seleção antes de enviar o diff ao Codex."
                 ));
             }
         }
-        let stats = self.read(&["diff", "--cached", "--numstat", "--no-renames", "-z", "--"])?;
+        let stats = read(&[
+            "--numstat",
+            "--no-renames",
+            "-z",
+            "--no-ext-diff",
+            "--no-textconv",
+        ])?;
         if stats
             .split(|&b| b == 0)
             .any(|entry| entry.starts_with(b"-\t-\t"))
         {
             return Err(
-                "o stage contém arquivo binário; esta versão exige um diff textual completo."
+                "a seleção contém arquivo binário; esta versão exige um diff textual completo."
                     .into(),
             );
         }
         let output = process::capture(
-            self.command().args([
-                "diff",
-                "--cached",
+            self.command().args(arguments(&[
                 "--no-ext-diff",
                 "--no-textconv",
                 "--no-color",
@@ -162,8 +183,11 @@ impl Repository {
                 "--dst-prefix=b/",
                 "--submodule=short",
                 "--unified=3",
-                "--",
-            ]),
+                "--full-index",
+                "--diff-algorithm=myers",
+                "--no-indent-heuristic",
+                "--inter-hunk-context=0",
+            ])),
             Vec::new(),
             Duration::from_secs(30),
             MAX_DIFF_BYTES,

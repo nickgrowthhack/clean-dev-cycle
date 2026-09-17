@@ -50,6 +50,7 @@ pub fn run(options: Options) -> Result<()> {
             &mut io::stdin().lock(),
             &mut io::stdout().lock(),
             &cancelled,
+            message::validate,
         )?
     };
     let Some(message) = message else {
@@ -83,11 +84,12 @@ pub fn run(options: Options) -> Result<()> {
     Ok(())
 }
 
-fn review(
+pub(crate) fn review(
     mut message: String,
     input: &mut impl BufRead,
     output: &mut impl Write,
     cancelled: &AtomicBool,
+    validate: fn(&str) -> Result<String>,
 ) -> Result<Option<String>> {
     loop {
         write!(output, "[Enter/s] confirmar, [e] editar, [n] cancelar: ")
@@ -121,7 +123,7 @@ fn review(
                         return Err("a mensagem editada excede 16 KiB.".into());
                     }
                 }
-                match message::validate(&edited) {
+                match validate(&edited) {
                     Ok(valid) => {
                         message = valid;
                         writeln!(output, "\nMensagem revisada:\n\n{message}\n")
@@ -247,7 +249,8 @@ mod tests {
                 "feat: adicionar fluxo".into(),
                 &mut &input[..],
                 &mut output,
-                &AtomicBool::new(false)
+                &AtomicBool::new(false),
+                message::validate,
             )
             .unwrap(),
             Some("fix: corrigir selecao".into())
@@ -266,7 +269,8 @@ mod tests {
                     "feat: adicionar fluxo".into(),
                     &mut input.as_bytes(),
                     &mut Vec::new(),
-                    &AtomicBool::new(false)
+                    &AtomicBool::new(false),
+                    message::validate,
                 )
                 .unwrap()
                 .is_none()

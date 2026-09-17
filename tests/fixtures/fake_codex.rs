@@ -23,6 +23,12 @@ fn main() {
         fs::write(repo.join("outra.txt"), "alteração concorrente").unwrap();
         assert!(Command::new("git").current_dir(&repo).args(["add", "outra.txt"]).status().unwrap().success());
     }
+    if mode == "mutate-changelog" {
+        fs::write(repo.join("CHANGELOG.md"), "alteração manual concorrente\n").unwrap();
+    }
+    if mode == "mutate-base" {
+        assert!(Command::new("git").current_dir(&repo).args(["update-ref", "refs/heads/main", "HEAD"]).status().unwrap().success());
+    }
     let index = args.iter().position(|arg| arg == "--output-last-message").unwrap();
     let response = if mode == "needs-context" {
         r#"{"message":"","needs_context":true,"reason":"Qual é a intenção desta mudança?"}"#
@@ -30,6 +36,8 @@ fn main() {
         r#"{"message":"mensagem sem tipo","needs_context":false,"reason":""}"#
     } else if mode == "malformed" {
         "não é JSON"
+    } else if input.contains("Você revisa uma entrega completa") {
+        r####"{"message":"### Revisão completa de entregas\n\nCada PR passa a ter uma síntese do resultado acumulado, preservando as notas existentes.","needs_context":false,"reason":""}"####
     } else {
         r#"{"message":"feat(cli): implementar geração de commits","needs_context":false,"reason":""}"#
     };
