@@ -19,13 +19,19 @@ precisa de seu próprio plano e PR, dentro deste escopo.
 
 ## Inventário observado em 2026-09-17
 
+Este registro é um retrato anterior à integração do
+[PR #2](https://github.com/nickgrowthhack/clean-dev-cycle/pull/2). A entrega
+documental permanece em andamento durante a revisão. Sua integração e o SHA
+resultante serão conferidos no GitHub, e a tabela será atualizada para integrada
+no próximo PR do escopo, com essa evidência efetiva.
+
 | Referência | Conteúdo observado | Situação |
 | --- | --- | --- |
 | `main`, em `c3b6e51` | Apenas o README inicial | Nenhuma entrega de código integrada |
 | `nick/integrate-commit-cli`, em `32b3198` | CLI inicial e sua nota de changelog | [PR #1](https://github.com/nickgrowthhack/clean-dev-cycle/pull/1) aberto para `main` |
 | `nick/outline`, em `49013d4` | CLI, changelog e validação de commits acumulados | Fonte para extrair entregas, sem PR aberto |
 | `nick/ci-delivery`, em `518d333` | Incremento de CI sobre `nick/outline` | Fonte para extrair a entrega de CI, sem PR aberto |
-| `nick/initial-cycle/branching-strategy` | Guia, este plano e links no README, partindo de `main` | Entrega documental independente, PR ainda não aberto |
+| `nick/initial-cycle/branching-strategy` | Guia, este plano e links no README, partindo de `main` | [PR #2](https://github.com/nickgrowthhack/clean-dev-cycle/pull/2) aberto para `main`, independente da CLI |
 
 Os commits `fca7985` e `73a5cd8` têm a mesma árvore de arquivos. O segundo ajusta
 a mensagem da implementação inicial para a integração. Os SHAs diferentes não
@@ -56,7 +62,7 @@ ainda não foi criada. As branches existentes mantêm seus nomes até a migraç�
 
 | Entrega | Dependências | Estado | Branch de entrega | PR |
 | --- | --- | --- | --- | --- |
-| `branching-strategy` | Nenhuma | em andamento | `nick/initial-cycle/branching-strategy` | Ainda não aberto |
+| `branching-strategy` | Nenhuma | em andamento | `nick/initial-cycle/branching-strategy` | [#2](https://github.com/nickgrowthhack/clean-dev-cycle/pull/2) |
 | `commit-cli` | Nenhuma | em andamento | `nick/integrate-commit-cli` | [#1](https://github.com/nickgrowthhack/clean-dev-cycle/pull/1) |
 | `changelog` | `commit-cli` | planejada | `nick/initial-cycle/changelog` | Ainda não aberto |
 | `commit-validation` | `changelog` | planejada | `nick/initial-cycle/commit-validation` | Ainda não aberto |
@@ -75,7 +81,12 @@ plano ao fazer essa divisão.
 - **branching-strategy:** guia aplicável a entregas independentes e encadeadas,
   convenção definida e migração rastreável. Aceite: links locais válidos, exemplos
   coerentes, nomes aceitos pelo Git e diff exclusivamente documental. Registrar
-  o PR e a evidência de revisão antes de marcar como integrada.
+  a evidência de revisão no PR #2 antes de marcar como integrada. A geração da
+  nota e as verificações usam `clean-dev-cycle 0.1.0`, compilado da revisão
+  `518d3338e0a5699a0f310604e951378cd505373e` no checkout de desenvolvimento.
+  O binário é uma ferramenta de apoio e não faz parte do diff documental. Os
+  resultados são locais, pois a `main` e esta branch ainda não contêm workflows
+  de CI.
 - **commit-cli:** geração, revisão e criação segura de commits, preservando stage
   parcial e hooks. Aceite: revisar o diff do PR #1, sua nota e os checks de
   qualidade sobre a base atual. Evidência atual: implementação e PR existentes,
