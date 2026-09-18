@@ -4,6 +4,16 @@ Cada entrada resume a entrega completa de um pull request, revisada antes do mer
 
 ## [Não lançado]
 
+<!-- clean-dev-cycle:pr:6:start -->
+<!-- clean-dev-cycle:fingerprint:v2:813a8ae03fc89b3cfb63c5c10a216e4322cdd2fc -->
+### Changelog manual com verificação independente da IA (#6)
+
+O comando `changelog` passa a aceitar uma síntese revisada por `--entry-file`, mantendo confirmação, edição, cancelamento e simulação. Esse caminho funciona sem IA para entregas com binários, conteúdo não UTF-8, submódulos e diffs acima do limite de geração. Também permite corrigir a redação de uma entrada quando o conteúdo do PR permanece igual.
+
+As novas notas são vinculadas aos caminhos, modos e identificadores completos dos objetos Git alterados e ao contexto fornecido. A verificação de atualidade dispensa o patch textual e continua detectando mudanças posteriores. As notas anteriores permanecem intactas e verificáveis pelo formato original. A geração por IA mantém suas restrições e passa a informar a alternativa manual quando não puder concluir a revisão.
+<!-- clean-dev-cycle:pr:6:end -->
+
+
 <!-- clean-dev-cycle:pr:5:start -->
 <!-- clean-dev-cycle:fingerprint:84b49b39d3c1833b8400751cac362fad31a70090 -->
 ### Validação de commits sem IA (#5)
