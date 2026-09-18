@@ -1,5 +1,6 @@
 mod changelog;
 mod check_commit;
+mod ci;
 mod cli;
 mod commit;
 mod executable;
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
         }
         Ok(cli::Action::Commit(options)) => finish(commit::run(options)),
         Ok(cli::Action::CheckCommit(options)) => finish(check_commit::run(options)),
+        Ok(cli::Action::CheckCi(options)) => finish(ci::run(options)),
         Ok(cli::Action::Changelog(options)) => finish(changelog::run(options)),
         Err(error) => {
             eprintln!("Erro: {error}\nUse clean-dev-cycle --help para consultar o uso.");
