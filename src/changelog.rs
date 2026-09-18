@@ -351,6 +351,62 @@ fn find_entry(document: &str, pr: u64) -> Result<Option<Entry<'_>>> {
     }))
 }
 
+pub fn has_entry(document: &str, pr: u64) -> Result<bool> {
+    Ok(find_entry(document, pr)?.is_some())
+}
+
+pub fn check_unreleased_entry(document: &str, pr: u64) -> Result<()> {
+    let entry = find_entry(document, pr)?.ok_or("a entrada do PR está ausente no changelog.")?;
+    let section = document[..entry.range.start]
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("## "));
+    if !section.is_some_and(|line| {
+        [
+            "## [Não lançado]",
+            "## Não lançado",
+            "## [Unreleased]",
+            "## Unreleased",
+        ]
+        .contains(&line)
+    }) {
+        return Err("a entrada do PR deve estar na seção Não lançado.".into());
+    }
+    Ok(())
+}
+
+pub fn check_editorial_change(before: &str, after: &str) -> Result<()> {
+    // Editorial fixes may change prose, but cannot act as an unchecked release.
+    let structure = |document: &str| -> Vec<String> {
+        document
+            .lines()
+            .filter(|line| {
+                line.contains("clean-dev-cycle:")
+                    || line.starts_with("# ")
+                    || line.starts_with("## ")
+            })
+            .map(str::to_owned)
+            .collect()
+    };
+    if structure(before) != structure(after) {
+        return Err("uma correção editorial não pode alterar versões, ordem das entradas, IDs ou fingerprints. A preparação de releases ainda não está habilitada.".into());
+    }
+    for line in after.lines() {
+        if let Some(pr) = line
+            .strip_prefix("<!-- clean-dev-cycle:pr:")
+            .and_then(|s| s.strip_suffix(":start -->"))
+        {
+            let pr = pr
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0)
+                .ok_or("identificador de PR inválido no changelog.")?;
+            find_entry(after, pr)?.ok_or("entrada do changelog inválida.")?;
+        }
+    }
+    Ok(())
+}
+
 fn render(
     document: &str,
     pr: u64,

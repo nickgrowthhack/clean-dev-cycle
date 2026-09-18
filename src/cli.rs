@@ -6,6 +6,7 @@ const HELP: &str = "Uso: clean-dev-cycle <COMANDO> [OPÇÕES]
 Comandos:
   commit          Gerar e revisar uma mensagem para o que está no stage.
   check-commit    Validar mensagens de commit sem IA ou escrita.
+  check-ci        Conferir commits e changelog de um PR sem IA.
   changelog       Revisar a entrega de um PR e atualizar CHANGELOG.md.
 
 Opções:
@@ -110,6 +111,7 @@ pub enum Action {
     Commit(Options),
     CheckCommit(CheckCommitOptions),
     Changelog(ChangelogOptions),
+    CheckCi(CiOptions),
 }
 
 pub fn parse(arguments: Vec<OsString>) -> Result<Action> {
@@ -122,6 +124,9 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Action> {
             Some("-V" | "--version") => return Ok(Action::Version),
             _ => {}
         }
+    }
+    if arguments[0] == "check-ci" {
+        return parse_ci(arguments.into_iter().skip(1).collect());
     }
     if arguments[0] == "changelog" {
         return parse_changelog(arguments.into_iter().skip(1).collect());
@@ -311,4 +316,48 @@ fn parse_check_commit(arguments: Vec<OsString>) -> Result<Action> {
         }
     };
     Ok(Action::CheckCommit(CheckCommitOptions { input }))
+}
+
+pub struct CiOptions {
+    pub event_file: PathBuf,
+}
+
+const CI_HELP: &str = "Uso: clean-dev-cycle check-ci --event-name pull_request --event-file CAMINHO
+
+Lê o JSON do evento do GitHub Actions. Exige histórico completo, checkout limpo
+do HEAD real do PR, base atualizada e ausência de commits de merge.
+Valida todos os commits. Exige nota atual em Não lançado para feat, fix, perf
+ou qualquer incompatibilidade. Para os demais, valida a nota se fornecida.
+O título do PR é livre. Contexto opcional: .changelog-context/NUMERO.md versionado.
+Não consulta o GitHub, chama IA, altera arquivos ou faz merge.
+";
+
+fn parse_ci(arguments: Vec<OsString>) -> Result<Action> {
+    if arguments.len() == 1 && matches!(arguments[0].to_str(), Some("-h" | "--help")) {
+        return Ok(Action::Help(CI_HELP));
+    }
+    let mut event_file = None;
+    let mut event_name = None;
+    let mut arguments = arguments.into_iter();
+    while let Some(argument) = arguments.next() {
+        let value = arguments
+            .next()
+            .filter(|s| !s.is_empty() && !s.to_string_lossy().starts_with('-'))
+            .ok_or("informe --event-name e --event-file com seus valores.")?;
+        match argument.to_str() {
+            Some("--event-file") if event_file.is_none() => event_file = Some(value.into()),
+            Some("--event-name") if event_name.is_none() => {
+                let name = value
+                    .to_str()
+                    .filter(|s| *s == "pull_request")
+                    .ok_or("--event-name deve ser pull_request.")?;
+                event_name = Some(name.to_owned());
+            }
+            _ => return Err("opção desconhecida ou repetida em check-ci.".into()),
+        }
+    }
+    event_name.ok_or("informe --event-name.")?;
+    Ok(Action::CheckCi(CiOptions {
+        event_file: event_file.ok_or("informe --event-file.")?,
+    }))
 }

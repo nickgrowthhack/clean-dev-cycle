@@ -40,6 +40,34 @@ fn version_matches_the_installable_package() {
 fn invalid_invocations_cannot_report_success() {
     for arguments in [
         &["--inexistente"][..],
+        &["check-ci"][..],
+        &[
+            "check-ci",
+            "--event-name",
+            "push",
+            "--event-file",
+            "event.json",
+        ][..],
+        &["check-ci", "--event-name", "pull_request"][..],
+        &["check-ci", "--event-file", "event.json"][..],
+        &[
+            "check-ci",
+            "--event-name",
+            "pull_request",
+            "--event-name",
+            "pull_request",
+            "--event-file",
+            "event.json",
+        ][..],
+        &[
+            "check-ci",
+            "--event-name",
+            "pull_request",
+            "--event-file",
+            "event.json",
+            "--config",
+            "policy.toml",
+        ][..],
         &["check-commit"][..],
         &["check-commit", "--from", "main"][..],
         &[
@@ -166,6 +194,22 @@ fn check_commit_help_describes_the_fixed_read_only_interface() {
         assert!(help.contains(expected), "{expected}");
     }
     assert!(!help.contains("--config"));
+}
+
+#[test]
+fn ci_help_describes_pr_validation_without_a_repository() {
+    let output = invoke(&["check-ci", "--help"]);
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "pull_request",
+        "--event-file",
+        "título do PR é livre",
+        "feat, fix, perf",
+    ] {
+        assert!(help.contains(expected));
+    }
+    assert!(!help.contains("push"));
 }
 
 #[test]

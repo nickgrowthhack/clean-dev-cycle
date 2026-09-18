@@ -1,0 +1,29 @@
+name: Entrega
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: entrega-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  delivery:
+    name: Entrega do PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Obter o HEAD real e o histórico completo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compilar o validador
+        run: cargo build --locked
+      - name: Conferir commits e changelog
+        run: ./target/debug/clean-dev-cycle check-ci --event-name pull_request --event-file "$GITHUB_EVENT_PATH"

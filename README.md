@@ -22,9 +22,8 @@ e livres. Tipos convencionais ficam nas mensagens dos commits.
 A política de changelog exige nota quando o PR contém `feat`, `fix`, `perf` ou
 qualquer quebra de compatibilidade. Para os demais tipos a nota é opcional.
 A classificação considera todos os commits, sem inferência por IA. A nota
-sempre sintetiza o resultado completo do PR. O CI que aplicará essa política
-é a próxima entrega do
-[ciclo inicial](docs/plans/initial-cycle.md).
+sempre sintetiza o resultado completo do PR. O CI aplica essa política sem
+exigir rótulos ou declarações adicionais de impacto.
 
 ## Criar um commit
 
@@ -163,6 +162,34 @@ clean-dev-cycle changelog --base origin/main --head branch-do-pr --pr 42 --check
 ```
 
 O fluxo não exige versionar cada commit nem gera releases ou tags. A organização posterior de vários PRs em uma versão permanece explícita no changelog.
+
+## Validar a entrega no CI
+
+```sh
+clean-dev-cycle check-ci --event-name pull_request --event-file evento.json
+```
+
+O comando lê o evento do GitHub Actions localmente, sem IA ou acesso à API.
+Exige checkout limpo do HEAD real do PR, histórico completo, base atualizada e
+ausência de merges. Valida todos os commits com o mesmo perfil de `check-commit`.
+O título do PR é descritivo e livre.
+
+Se qualquer commit for `feat`, `fix`, `perf` ou indicar incompatibilidade com
+`!`, `BREAKING CHANGE` ou `BREAKING-CHANGE`, exige nota atual em “Não lançado”.
+Nos demais PRs, nem a nota nem `CHANGELOG.md` são obrigatórios. Se uma nota
+para o PR existir, ela também precisa estar atualizada. Contexto adicional é
+opcional, mas deve estar versionado em `.changelog-context/NUMERO.md` e ser
+fornecido com `--context-file` ao registrar a nota.
+
+Uma correção exclusivamente editorial de `CHANGELOG.md` pode preservar suas
+notas sem gerar outra entrada, desde que não haja commits de impacto e que
+versões, ordem, identificadores, fingerprints e estrutura sejam preservados.
+
+O workflow de qualidade roda em PRs, pushes na `main` e execução manual, com
+Linux e Windows. O workflow de entrega roda em eventos de PR, incluindo mudança
+de base, e valida seu HEAD real. O merge de teste do GitHub é usado pelo workflow
+de qualidade para testar o resultado integrado. A obrigatoriedade dos checks
+depende também das [proteções da branch](docs/branching.md).
 
 ## Desenvolvimento
 
