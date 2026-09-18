@@ -37,6 +37,32 @@ impl Repository {
         })
     }
 
+    pub fn resolve_commit(&self, reference: &OsStr) -> Result<String> {
+        if reference.is_empty() || reference.to_string_lossy().starts_with('-') {
+            return Err("referência de commit inválida.".into());
+        }
+        let mut revision = reference.to_owned();
+        revision.push("^{commit}");
+        let output = process::capture(
+            self.command()
+                .args(["rev-parse", "--verify", "--end-of-options"])
+                .arg(revision),
+            Vec::new(),
+            Duration::from_secs(30),
+            4096,
+            &AtomicBool::new(false),
+        )?;
+        if !output.status.success() {
+            return Err(format!(
+                "a referência {} não resolve para um commit local.",
+                reference.to_string_lossy()
+            ));
+        }
+        String::from_utf8(output.stdout)
+            .map(|s| s.trim().to_owned())
+            .map_err(|_| "identificador de commit inválido.".into())
+    }
+
     pub fn command(&self) -> Command {
         let mut command = Command::new("git");
         command

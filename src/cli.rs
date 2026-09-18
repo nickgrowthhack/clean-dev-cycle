@@ -5,6 +5,7 @@ const HELP: &str = "Uso: clean-dev-cycle <COMANDO> [OPÇÕES]
 
 Comandos:
   commit          Gerar e revisar uma mensagem para o que está no stage.
+  check-commit    Validar mensagens de commit sem IA ou escrita.
   changelog       Revisar a entrega de um PR e atualizar CHANGELOG.md.
 
 Opções:
@@ -38,6 +39,34 @@ pub struct Options {
     pub model: Option<OsString>,
     pub codex: OsString,
     pub timeout: Duration,
+}
+
+const CHECK_COMMIT_HELP: &str = "Uso: clean-dev-cycle check-commit --message-file CAMINHO
+     clean-dev-cycle check-commit --from REF --to REF
+
+Valida um arquivo UTF-8 ou todos os commits alcançáveis por TO, excluindo FROM
+e seus ancestrais (FROM..TO). As referências são resolvidas antes da leitura.
+Não chama IA, modifica arquivos, altera o stage ou cria commits.
+
+Opções:
+  --message-file CAMINHO Arquivo com a mensagem, inclusive o argumento de commit-msg.
+  --from REF             Referência inicial, exclusiva.
+  --to REF               Referência final, inclusiva.
+  -h, --help             Exibir esta ajuda.
+
+Usa o mesmo perfil fixo da geração de commits, sem configuração por projeto.
+Intervalos exigem histórico completo. Um intervalo vazio é válido e informa zero.
+Mensagens automáticas de merge, revert, fixup e squash não são ignoradas.
+Saída: 0 para mensagens válidas, 1 para falha de validação/leitura, 2 para uso inválido.
+";
+
+pub enum CheckCommitInput {
+    MessageFile(PathBuf),
+    Range { from: OsString, to: OsString },
+}
+
+pub struct CheckCommitOptions {
+    pub input: CheckCommitInput,
 }
 
 const CHANGELOG_HELP: &str = "Uso: clean-dev-cycle changelog --base REF --pr NÚMERO [OPÇÕES]
@@ -76,6 +105,7 @@ pub enum Action {
     Help(&'static str),
     Version,
     Commit(Options),
+    CheckCommit(CheckCommitOptions),
     Changelog(ChangelogOptions),
 }
 
@@ -92,6 +122,9 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Action> {
     }
     if arguments[0] == "changelog" {
         return parse_changelog(arguments.into_iter().skip(1).collect());
+    }
+    if arguments[0] == "check-commit" {
+        return parse_check_commit(arguments.into_iter().skip(1).collect());
     }
     if arguments[0] != "commit" {
         return Err(format!(
@@ -220,4 +253,45 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
         check,
         generation,
     }))
+}
+
+fn parse_check_commit(arguments: Vec<OsString>) -> Result<Action> {
+    if arguments.len() == 1 && matches!(arguments[0].to_str(), Some("-h" | "--help")) {
+        return Ok(Action::Help(CHECK_COMMIT_HELP));
+    }
+    let (mut file, mut from, mut to) = (None, None, None);
+    let mut seen = std::collections::HashSet::new();
+    let mut arguments = arguments.into_iter();
+    while let Some(argument) = arguments.next() {
+        if !seen.insert(argument.clone()) {
+            return Err(format!("opção repetida: {}.", argument.to_string_lossy()));
+        }
+        if !matches!(
+            argument.to_str(),
+            Some("--message-file" | "--from" | "--to")
+        ) {
+            return Err(format!(
+                "opção não reconhecida: {}.",
+                argument.to_string_lossy()
+            ));
+        }
+        let value = arguments
+            .next()
+            .filter(|v| !v.is_empty() && !v.to_string_lossy().starts_with('-'))
+            .ok_or_else(|| format!("informe um valor para {}.", argument.to_string_lossy()))?;
+        match argument.to_str().unwrap() {
+            "--message-file" => file = Some(PathBuf::from(value)),
+            "--from" => from = Some(value),
+            "--to" => to = Some(value),
+            _ => unreachable!(),
+        }
+    }
+    let input = match (file, from, to) {
+        (Some(path), None, None) => CheckCommitInput::MessageFile(path),
+        (None, Some(from), Some(to)) => CheckCommitInput::Range { from, to },
+        _ => {
+            return Err("use --message-file CAMINHO ou --from REF --to REF, separadamente.".into());
+        }
+    };
+    Ok(Action::CheckCommit(CheckCommitOptions { input }))
 }

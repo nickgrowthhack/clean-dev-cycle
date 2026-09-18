@@ -1,182 +1,59 @@
 # initial-cycle: primeiro ciclo completo de desenvolvimento
 
-**Responsável pelo escopo:** Nick (`nick`). **Estado:** em andamento.
+O objetivo é comprovar commit, validação, changelog, versão, tag e GitHub Release,
+com entregas pequenas e retomada sem publicação duplicada. Seguimos o
+[guia de branching](../branching.md). Estado e evidências ficam nos PRs.
 
-O objetivo é comprovar o primeiro ciclo de commits, validação, changelog,
-versionamento, tag e GitHub Release, dividindo o trabalho em entregas pequenas.
-Seguimos o [guia de branching](../branching.md).
+## Decisões
 
-## Critério de conclusão
+- Um perfil fixo de commits: estrutura convencional, tipos conhecidos e título
+  com até 100 caracteres Unicode. Sem limites por linha no corpo, regras de caixa,
+  ponto final, configuração por projeto ou equivalência com commitlint.
+- Commits significativos preservados por rebase. Título descritivo livre no PR.
+- Nota obrigatória para PRs com `feat`, `fix`, `perf` ou qualquer incompatibilidade.
+  Demais tipos podem incluir nota, mas não precisam. A nota sintetiza o PR completo.
+- Geração por IA opcional, com alternativa manual verificável para o changelog.
+- PRs concentram estado e evidências. Planos registram decisões e dependências.
 
-O escopo termina quando suas entregas obrigatórias estiverem integradas e houver
-evidência de um ciclo real: commit revisado, PR validado, síntese da entrega no
-changelog, versão determinada, tag e GitHub Release correspondentes. A entrega
-de releases deve comprovar também uma retomada sem publicação duplicada.
+## Entregas da simplificação
 
-Código existente numa branch, um workflow escrito ou uma configuração proposta
-não comprovam esse resultado. Versionamento e releases ainda precisam de seu
-próprio plano e PR, dentro deste escopo.
+| Entrega | Dependência | Critério de conclusão |
+| --- | --- | --- |
+| Validação simples | CLI existente | `check-commit` valida arquivos e intervalos sem IA, configuração ou mutações, com o perfil da `main` |
+| Changelog manual | Validação simples | Nota fornecida por arquivo e fingerprint de metadados permitem verificar binários e diffs grandes sem IA, preservando notas antigas |
+| CI simplificado | Changelog manual | PR interno passa sem nota, PR relevante exige nota atual, título livre e commits validados |
+| Proteção da main | CI simplificado | Checks comprovados e obrigatórios, PR, base atualizada e rebase, incluindo administrador, sem aprovação externa obrigatória |
 
-## Estado das entregas em 2026-09-17
+Cada entrega parte da `main` atualizada e integra antes da próxima. Código,
+testes e documentação são revisados juntos. Não há tabela de status a sincronizar.
 
-Este registro representa o estado durante a revisão do
-[PR #4](https://github.com/nickgrowthhack/clean-dev-cycle/pull/4). A CLI está
-integrada. O changelog permanece em andamento até sua integração ser comprovada.
-A atualização para integrado acompanhará o próximo PR do escopo, com o SHA
-efetivo do merge.
+Para cada alteração de código, executar formatação, Clippy, testes, build,
+ajuda/versão e `git diff --check`. Conferir Linux e Windows no PR correspondente.
+Registrar evidências no próprio PR. Não reutilizar verificações de outra revisão.
 
-Todos os responsáveis são `nick`. Branches de entregas planejadas serão criadas
-quando o trabalho começar. As branches de validação e CI já existem e aguardam
-a integração de seus pré-requisitos. Compartilhar o escopo não exige juntar
-entregas num único PR.
+## Recuperação excepcional do trabalho acumulado
 
-| Entrega | Dependências | Estado | Branch | PR |
-| --- | --- | --- | --- | --- |
-| `branching-strategy` | Nenhuma | integrada | `nick/initial-cycle/branching-strategy` | [#2](https://github.com/nickgrowthhack/clean-dev-cycle/pull/2) |
-| `commit-cli` | Nenhuma | integrada | `nick/initial-cycle/commit-cli` | [#3](https://github.com/nickgrowthhack/clean-dev-cycle/pull/3) |
-| `changelog` | `commit-cli` | em andamento | `nick/initial-cycle/changelog` | [#4](https://github.com/nickgrowthhack/clean-dev-cycle/pull/4) |
-| `commit-validation` | `changelog` | bloqueada | `nick/initial-cycle/commit-validation` | Ainda não aberto |
-| `ci-delivery` | `commit-validation` | bloqueada | `nick/initial-cycle/ci-delivery` | Ainda não aberto |
-| `main-protection` | `ci-delivery` | planejada | `nick/initial-cycle/main-protection` | Ainda não aberto |
-| `release-cycle` | `main-protection` | planejada | `nick/initial-cycle/release-cycle` | Ainda não aberto |
+As branches antigas são fontes de consulta, não a base das novas entregas.
+A CLI e o changelog já foram integrados pelos PRs #3 e #4. Não os reaplique.
 
-`release-cycle` registra uma capacidade futura. Seu detalhamento poderá gerar
-entregas menores antes de criar a branch. Atualize dependências e critérios no
-plano ao fazer essa divisão.
+- `49013d4`, após `573c579`: reaproveitar a leitura de mensagens e intervalos,
+  sem transportar a política configurável, suas fixtures ou seu anúncio de
+  incompatibilidade. Mensagens e notas devem descrever o novo diff contra a main.
+- `518d333` e `b70fe11`, após `49013d4`: reaproveitar a validação de PR,
+  ajustando-a às decisões acima. Não incorporar o validador de eventos de push.
+- Preservar checkouts, branches e notas anteriores. A exclusão física dos
+  checkouts antigos fica fora desta correção.
 
-### Resultados, evidências e critérios de aceite
+Usar o binário compilado da própria entrega. A ferramenta de apoio antiga não
+pode impor as regras abandonadas nem validar os fingerprints novos.
+O registro local `.tools/integration/RETOMADA.md` orienta a operação deste workspace.
+Ele não acompanha novos clones nem substitui os PRs como fonte de evidências.
 
-- **branching-strategy:** guia, plano e links no README integrados pelo PR #2,
-  no commit `6712b01fb3b75dbdbfd39d04671805a097561344`. Foram verificados links,
-  nomes, sintaxe dos exemplos PowerShell, commits, changelog e check-ci local.
-  A árvore integrada foi comparada à entrega validada. A sintaxe dos exemplos
-  foi conferida sem executar seus comandos de rebase ou push.
-- **commit-cli:** geração, revisão e criação segura de commits, preservando stage
-  parcial e hooks. Integrada pelo PR #3 no commit
-  `841193a4edb02c31579dd96d929e69e42a50e689`. A implementação de `73a5cd8` teve
-  autoria e mensagem preservadas, mantendo código, testes, dependências e
-  workflow. Passaram formatação, Clippy, 30 testes, build, ajuda, versão,
-  validação de commits, changelog e check-ci local. Linux, Windows e `Qualidade`
-  passaram no SHA do PR. A árvore integrada foi comparada à validada, com o
-  guia e a nota do PR #2 preservados. O PR #3 continua a entrega do PR #1.
-- **changelog:** síntese por PR, preservação de notas anteriores e verificação
-  de atualidade sem IA. Aceite: testes de geração, atualização, preservação e
-  `--check`, além da nota do próprio PR. O PR #4 extrai somente o incremento de
-  `573c579` sobre `fca7985`, aplicado na base `841193a`. Preserva as notas dos
-  PRs #2 e #3. A mensagem mantém autoria e significado, com o corpo dividido
-  em linhas compatíveis com a política atual. A própria CLI desta entrega gera
-  e confere sua nota. Os resultados finais ficam registrados na descrição do PR.
-- **commit-validation:** política compartilhada para mensagens e intervalos de
-  commits. Fonte: incremento de `49013d4` sobre `573c579`. Está bloqueada até a
-  integração do changelog. Aceite: testes da configuração, limites e mensagens,
-  preservando a indicação de incompatibilidade da entrega.
-- **ci-delivery:** validação de commits, título e changelog usando eventos de
-  push e PR. Fonte: incremento de `518d333` sobre `49013d4`, acompanhado do ajuste
-  documental `b70fe11`. Está bloqueada até a integração da validação de commits.
-  Aceite: testes de eventos e checks no PR incremental, com base atualizada e
-  checkout real, incluindo a documentação de adoção do CI.
-- **main-protection:** aplicar as regras do guia e documentar sua configuração.
-  Aceite: leitura das configurações remotas e evidência de bloqueio dos casos
-  inválidos, sem experimentar pushes destrutivos na `main`. Ainda não executada.
-- **release-cycle:** versão, tag e GitHub Release correspondentes às entregas,
-  preservando as notas por PR. Aceite: ciclo real e retomada documentados, com
-  links para versão, tag, release e execuções. Ainda não implementada. Seu plano
-  deve definir o contrato com o CI antes da implementação.
+## Próximo objetivo após a simplificação
 
-As notas dos PRs #2 e #3 foram geradas pela ferramenta de apoio
-`clean-dev-cycle 0.1.0`, compilada da revisão
-`518d3338e0a5699a0f310604e951378cd505373e` no checkout de desenvolvimento.
-No PR #4, a geração e a conferência da nota usam o binário compilado da própria
-entrega. A ferramenta de apoio é usada somente para validar mensagens e executar
-check-ci localmente. Essas verificações ainda não fazem parte da CLI integrada
-e seu uso não antecipa a entrega de validação ou de CI.
+Implementar e comprovar versão, tag e GitHub Release correspondentes às entregas,
+com uma autoridade de versionamento e retomada sem publicação duplicada. Essa
+entrega terá plano próprio para autenticação, contrato com CI e recuperação.
 
-### Proteções observadas e política alvo
-
-Na consulta ao GitHub nesta data, a `main` não tinha proteção tradicional nem
-regras efetivas. Rebase, squash e merge commit estavam permitidos. Auto-merge e
-exclusão automática de branches estavam desativados. Confirme novamente o estado
-remoto antes de qualquer alteração de configuração.
-
-A política alvo ainda será aplicada em `main-protection`. O PR #3 integrou o
-workflow de qualidade da CLI para Linux e Windows. O check `Entrega do PR`
-pertence à entrega `ci-delivery` e ainda não está integrado. Os resultados de
-check-ci executado como ferramenta de apoio são locais, distintos dos checks
-executados pelo GitHub.
-
-## Integração incremental
-
-1. **CLI concluída pelo PR #3.** Integrada por rebase em `841193a`, com os checks
-   aprovados e o guia e a nota do PR #2 preservados.
-2. **Concluir o changelog pelo PR #4.** A branch `nick/initial-cycle/changelog`
-   reaplica somente `573c579` sobre a `main` que contém a CLI. Preservar as notas
-   integradas, gerar a síntese do PR completo e conferir os checks na base atual.
-   Integrar por rebase, exigindo o SHA validado. Não reaplicar a implementação
-   da CLI contida nos ancestrais do incremento.
-3. **Atualizar a validação.** Depois do changelog, reutilizar
-   `nick/initial-cycle/commit-validation`, reaplicando somente `49013d4` sobre a
-   `main` atualizada. O limite anterior dos commits exclusivos é `573c579`.
-   Conferir e ajustar as mensagens sem alterar autoria, significado ou trailers.
-4. **Atualizar o CI.** Depois da validação, reutilizar
-   `nick/initial-cycle/ci-delivery`, reaplicando `518d333` e `b70fe11` sobre a
-   `main` atualizada. O limite anterior é `49013d4`. Incluir o ajuste documental
-   junto com a implementação e conferir o contrato do validador no PR real.
-5. **Ativar as proteções.** Com o CI integrado e comprovado, exigir `Qualidade`
-   e `Entrega do PR`, PR obrigatório, base atualizada e histórico linear.
-   Habilitar somente rebase merge, aplicar a proteção também a administradores
-   e bloquear force-push e exclusão da `main`.
-6. **Encerrar as entregas concluídas.** Registrar PRs e evidências, retirar as
-   dependências e só então excluir branches que deixaram de ser necessárias.
-
-Antes de cada operação, conferir as pontas locais e remotas. Nos transplantes,
-usar o limite anterior registrado para excluir os incrementos já entregues.
-Conferir `git range-diff`, o diff final e os testes. Em branches publicadas,
-coordenar a atualização e usar lease explícito sobre a ponta remota conferida.
-Se ela mudar, revisar o trabalho novo antes de publicar.
-
-As mensagens reaplicadas precisam passar na política atual, inclusive as linhas
-do corpo e os trailers. Cada diff de changelog precisa respeitar o limite de
-128 KiB, excluindo o próprio changelog. Se exceder o limite, dividir novamente
-por resultado seguro, sem aumentar ou contornar o limite silenciosamente.
-
-Commitar as mudanças de código e documentação antes de gerar a nota de cada PR,
-usando seu número real e sua base atual. Preservar todas as entradas integradas
-anteriormente e repetir `changelog --check` depois de qualquer atualização.
-
-Na entrada de `ci-delivery`, a `main` já conterá seus pré-requisitos. Exigir o
-check remoto antes dessa comprovação pode bloquear a adoção. PRs de release
-ainda não têm dispensa no validador: o contrato será tratado em `release-cycle`.
-
-## Validação das entregas
-
-Para cada entrega de código extraída ou atualizada, executar novamente:
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo build --release --locked
-git diff --check
-```
-
-Conferir também mensagens, nota do PR, execução do binário e checks no GitHub.
-Não reutilizar resultados de outra base como prova da nova entrega. Falhas de
-ambiente ficam registradas como validação pendente até a execução adequada.
-
-| Cenário | Resultado esperado |
-| --- | --- |
-| Documentação e código no mesmo escopo | A documentação integra sem herdar a implementação |
-| B depende de A ainda em revisão | O PR de B mostra somente B e aguarda A entrar na `main` |
-| A entra por rebase merge | B usa o limite anterior registrado, sem reaplicar A, e passa novamente pelos checks |
-| A ou `main` avança | Atualizar a base, revisar o diff e conferir a nota antes de integrar |
-| Conflito de código ou changelog | Resolver e validar novamente ou abortar e registrar o bloqueio, preservando outras notas |
-| A é cancelada | Revisar e bloquear, cancelar ou adaptar B antes de remover sua dependência |
-| Funcionalidade integrada desativada | Comportamento anterior preservado, estado desativado testado e ativação registrada |
-| Branch publicada muda durante reescrita | O lease recusa o push e exige nova coordenação |
-| Entrega integrada | Incremento sem duplicação, mensagens válidas, notas preservadas e resultado conferido |
-
-Automação de branches, suporte simultâneo a versões antigas e fila de integração
-ficam fora do critério mínimo deste primeiro ciclo. A fila exige antes suporte
-aos seus eventos, incluindo `merge_group`, e validação dos checks e da política
-de merge. Decisões futuras devem preservar a divisão em entregas e a visibilidade
-do que está resolvido, verificado ou pendente.
+Novos provedores, coordenação automática de todo o fluxo, revisão por IA de outros
+formatos e manutenção simultânea de versões ficam adiados.

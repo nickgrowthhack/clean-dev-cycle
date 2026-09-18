@@ -4,9 +4,27 @@ Uma ferramenta em desenvolvimento para dividir o trabalho dos desenvolvedores em
 entregas pequenas, verificáveis e ligadas a um objetivo comum.
 
 - [Estratégia de branching](docs/branching.md): nomes, integração e dependências entre entregas.
-- [Plano do ciclo inicial](docs/plans/initial-cycle.md): trabalho atual, migração e critérios de conclusão.
+- [Plano do ciclo inicial](docs/plans/initial-cycle.md): objetivo, decisões e critérios de conclusão.
 
 CLI em Rust para automatizar commits, revisar entregas de pull requests para o changelog e apoiar o ciclo de releases.
+
+## Método de trabalho
+
+Conclua uma mudança significativa por vez, com objetivo e verificação claros.
+Código, testes e documentação que explicam o mesmo resultado pertencem à mesma
+entrega. Preserve commits compreensíveis e integre o PR por rebase.
+
+O PR concentra estado, responsáveis, discussão e evidências. O plano versionado
+guarda objetivo, decisões, dependências e critérios de conclusão. Não crie um
+commit apenas para atualizar o status de outro PR. Títulos de PR são descritivos
+e livres. Tipos convencionais ficam nas mensagens dos commits.
+
+A política de changelog exige nota quando o PR contém `feat`, `fix`, `perf` ou
+qualquer quebra de compatibilidade. Para os demais tipos a nota é opcional.
+A classificação considera todos os commits, sem inferência por IA. A nota
+sempre sintetiza o resultado completo do PR. O CI que aplicará essa política
+e a alternativa de nota por arquivo são as próximas entregas do
+[ciclo inicial](docs/plans/initial-cycle.md).
 
 ## Criar um commit
 
@@ -48,6 +66,39 @@ O comando preserva a seleção parcial de arquivos e executa os hooks existentes
 A integração usa a autenticação padrão OpenAI do Codex e reaproveita `model` e `model_reasoning_effort` do `config.toml`. As demais configurações pessoais, plugins e ferramentas ficam desativadas durante a geração, realizada em um diretório temporário separado. É necessária uma versão do Codex CLI com suporte a `exec --ignore-user-config` e `--output-schema`.
 
 Nesta versão, o diff precisa ser textual, UTF-8 e ter até 128 KiB; arquivos binários, submódulos e operações de merge/rebase em andamento são recusados. O contexto adicional aceita até 16 KiB. Nomes comuns de arquivos sensíveis, como `.env` e chaves privadas, são bloqueados; isso não substitui a revisão do conteúdo selecionado. Uma resposta inválida do Codex recebe no máximo uma tentativa de correção.
+
+## Validar commits sem IA
+
+```sh
+clean-dev-cycle check-commit --message-file mensagem.txt
+clean-dev-cycle check-commit --from origin/main --to HEAD
+```
+
+O primeiro comando lê um arquivo UTF-8, inclusive fora de um repositório e sem
+precisar de Git. O segundo valida todos os commits de `FROM..TO`, incluindo
+commits de branches integradas. Exige histórico completo, resolve as referências
+para commits e informa todas as mensagens inválidas. Um intervalo vazio passa.
+Nenhum dos modos chama IA ou modifica mensagens, stage, arquivos ou histórico.
+Saídas: `0` para sucesso, `1` para erro de leitura/validação e `2` para uso inválido.
+
+Um único perfil vale para geração, edição, hooks e validação: Conventional
+Commits com os tipos `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `style`,
+`ci`, `build`, `chore` e `revert`, descrição obrigatória e título de até 100
+caracteres Unicode. A contagem usa os valores escalares Unicode, não unidades
+UTF-16 ou agrupamentos visuais. Maiúsculas, ponto final e linhas longas no corpo
+são permitidos. Corpo e rodapés seguem a estrutura convencional. O limite total
+é 16 KiB, com rejeição de caracteres de controle inválidos. Preservamos o perfil
+já usado pela CLI. Não há configuração por projeto nem dependência de commitlint.
+
+Para validar commits manuais, acrescente ao hook `commit-msg` existente:
+
+```sh
+clean-dev-cycle check-commit --message-file "$1" || exit $?
+```
+
+Preserve os demais comandos do hook. A CLI não instala hooks automaticamente.
+Quando a geração por IA não atender à mudança, use `git commit` e o mesmo
+validador. Formatação que altera o stage deve ocorrer antes da geração.
 
 ## Atualizar o changelog de um PR
 
