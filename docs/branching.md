@@ -49,12 +49,14 @@ Em conflitos, preserve a intenção de ambas as mudanças e as notas existentes.
 Se a intenção não estiver clara, aborte o rebase e peça esclarecimento. Use
 correção ou revert por PR para regressões na `main`, sem reescrever seu histórico.
 
-A política alvo exige PR, base atualizada, histórico linear e os checks
+A política aplicada à `main` exige PR, base atualizada, histórico linear e os checks
 `Qualidade` e `Entrega do PR`, também para o administrador, sem force-push ou
 exclusão da `main`. Para o fluxo individual, não exige aprovação de outra pessoa.
-As regras remotas só serão ativadas depois de seus checks estarem integrados e
-comprovados. A configuração dos workflows não ativa a proteção da branch.
+O único método de integração habilitado é rebase. As proteções são configurações
+remotas do repositório e precisam acompanhar os workflows. A evidência de sua
+ativação e conferência fica no PR da entrega de CI.
 
-O [plano inicial](plans/initial-cycle.md) separa a recuperação das branches antigas
-do caminho cotidiano. Automação de branches, fila de integração e manutenção de
+O [plano inicial](plans/initial-cycle.md) separa a consulta às branches antigas
+do caminho cotidiano. Elas permanecem disponíveis como histórico, fora do fluxo
+ativo. Automação de branches, fila de integração e manutenção de
 várias versões não fazem parte deste primeiro ciclo.

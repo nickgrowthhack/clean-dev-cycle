@@ -31,16 +31,18 @@ Para cada alteração de código, executar formatação, Clippy, testes, build,
 ajuda/versão e `git diff --check`. Conferir Linux e Windows no PR correspondente.
 Registrar evidências no próprio PR. Não reutilizar verificações de outra revisão.
 
-## Recuperação excepcional do trabalho acumulado
+## Consulta excepcional ao trabalho anterior
 
-As branches antigas são fontes de consulta, não a base das novas entregas.
-A CLI e o changelog já foram integrados pelos PRs #3 e #4. Não os reaplique.
+As branches anteriores à simplificação ficam fora do fluxo ativo. Novas entregas
+partem da `main`, que contém o método escolhido. O reaproveitamento seletivo foi
+concluído. Não retome as branches antigas como entregas pendentes nem reaplique
+a CLI e o changelog dos PRs #3 e #4.
 
-- `49013d4`, após `573c579`: reaproveitar a leitura de mensagens e intervalos,
-  sem transportar a política configurável, suas fixtures ou seu anúncio de
-  incompatibilidade. Mensagens e notas devem descrever o novo diff contra a main.
-- `518d333` e `b70fe11`, após `49013d4`: reaproveitar a validação de PR,
-  ajustando-a às decisões acima. Não incorporar o validador de eventos de push.
+- `49013d4`, após `573c579`: referência histórica da validação configurável.
+  Sua política, fixtures de commitlint e anúncio de incompatibilidade foram
+  descartados. Essa política nunca fez parte da `main`.
+- `518d333` e `b70fe11`, após `49013d4`: referência histórica do CI anterior.
+  A validação de pushes e a exigência de título convencional foram descartadas.
 - Preservar checkouts, branches e notas anteriores. A exclusão física dos
   checkouts antigos fica fora desta correção.
 
