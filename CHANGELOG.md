@@ -4,6 +4,18 @@ Cada entrada resume a entrega completa de um pull request, revisada antes do mer
 
 ## [Não lançado]
 
+<!-- clean-dev-cycle:pr:5:start -->
+<!-- clean-dev-cycle:fingerprint:84b49b39d3c1833b8400751cac362fad31a70090 -->
+### Validação de commits sem IA (#5)
+
+Adiciona `check-commit` para validar mensagens em arquivos UTF-8 ou commits de um intervalo `FROM..TO`, sem IA nem alterações em arquivos, stage ou histórico. A validação por arquivo funciona sem Git e fora de repositórios, permitindo integração manual com hooks `commit-msg`. Usa o mesmo perfil Conventional Commits da geração, com título de até 100 caracteres Unicode e mensagem de até 16 KiB, sem configuração por projeto.
+
+A validação de intervalos exige histórico completo, inclui commits de branches integradas e informa todas as mensagens inválidas. Intervalos vazios são aceitos. Os códigos de saída distinguem sucesso (`0`), erro de leitura ou validação (`1`) e uso inválido (`2`).
+
+O fluxo documentado passa a concentrar estado e evidências nos PRs, mantendo decisões e dependências nos planos. Define nota de changelog obrigatória para entregas com `feat`, `fix`, `perf` ou quebra de compatibilidade, opcional nos demais casos e sempre referente ao PR completo. A aplicação dessa política pelo CI permanece prevista para uma entrega futura.
+<!-- clean-dev-cycle:pr:5:end -->
+
+
 <!-- clean-dev-cycle:pr:4:start -->
 <!-- clean-dev-cycle:fingerprint:5f82fb2e99ec22c193c4e69eeeaf146bd92ebe2c -->
 ### Changelog com síntese da entrega completa por PR (#4)
