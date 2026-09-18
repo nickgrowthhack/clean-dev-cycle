@@ -4,6 +4,16 @@ Cada entrada resume a entrega completa de um pull request, revisada antes do mer
 
 ## [Não lançado]
 
+<!-- clean-dev-cycle:pr:7:start -->
+<!-- clean-dev-cycle:fingerprint:v2:0205e1223e6fbac51922e1599b54a3801704d06e -->
+### Verificação automática das entregas no PR (#7)
+
+O CI valida todos os commits e exige changelog atualizado quando há funcionalidade, correção, melhoria de desempenho ou incompatibilidade. PRs internos podem seguir sem nota, e seus títulos permanecem livres e descritivos.
+
+A verificação exige base atualizada e histórico linear, aceita notas manuais para binários e diffs grandes e funciona sem IA. A qualidade é conferida em Linux e Windows, enquanto a entrega é validada no HEAD real do PR.
+<!-- clean-dev-cycle:pr:7:end -->
+
+
 <!-- clean-dev-cycle:pr:6:start -->
 <!-- clean-dev-cycle:fingerprint:v2:813a8ae03fc89b3cfb63c5c10a216e4322cdd2fc -->
 ### Changelog manual com verificação independente da IA (#6)
