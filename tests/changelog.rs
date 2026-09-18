@@ -108,6 +108,24 @@ impl Repo {
         self.command(mode, args).output().unwrap()
     }
 
+    fn without_ai(&self, args: &[&str]) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_clean-dev-cycle"));
+        command
+            .current_dir(&self.root)
+            .args(["changelog", "--base", "main", "--pr", "42"])
+            .args(args)
+            // A regular file cannot be used as a Codex configuration directory.
+            .env("CODEX_HOME", self.directory.path().join("gitconfig"));
+        self.isolate(&mut command);
+        command.output().unwrap()
+    }
+
+    fn note_file(&self, text: &str) -> PathBuf {
+        let path = self.directory.path().join("nota.md");
+        fs::write(&path, text).unwrap();
+        path
+    }
+
     fn document(&self) -> String {
         fs::read_to_string(self.root.join("CHANGELOG.md")).unwrap()
     }
@@ -336,4 +354,179 @@ fn check_rejects_shallow_history_without_writing() {
     );
     assert!(!shallow.join("CHANGELOG.md").exists());
     assert_eq!(repo.calls(), 0);
+}
+
+#[test]
+fn manual_notes_cover_binary_non_utf8_large_and_sensitive_changes_without_ai() {
+    for (name, content) in [
+        ("image.bin", b"\0image".to_vec()),
+        ("non-utf8.txt", vec![0xff, 0xfe, b'\n']),
+        ("large.txt", vec![b'x'; 140 * 1024]),
+        (".env", b"EXAMPLE=value\n".to_vec()),
+    ] {
+        let repo = Repo::new();
+        fs::write(repo.root.join(name), &content).unwrap();
+        repo.git(&["add", "--", name]);
+        repo.git(&["commit", "-m", "feat: incluir recurso"]);
+        let note = repo.note_file("### Entrega completa\n\nSíntese revisada da mudança.");
+        let file = note.to_str().unwrap();
+        let head = repo.git(&["rev-parse", "HEAD"]);
+        let index = repo.git(&["ls-files", "--stage"]);
+        success(&repo.without_ai(&["--entry-file", file, "--dry-run"]));
+        assert!(!repo.root.join("CHANGELOG.md").exists());
+        success(&repo.without_ai(&["--entry-file", file, "--yes"]));
+        assert_eq!(head, repo.git(&["rev-parse", "HEAD"]));
+        assert_eq!(index, repo.git(&["ls-files", "--stage"]));
+        assert!(repo.document().contains("fingerprint:v2:"));
+        repo.git(&["add", "CHANGELOG.md"]);
+        repo.git(&["commit", "-m", "docs: registrar nota"]);
+        success(&repo.without_ai(&["--check"]));
+        success(&repo.without_ai(&["--yes"]));
+        fs::write(
+            repo.root.join(name),
+            [content, b"changed".to_vec()].concat(),
+        )
+        .unwrap();
+        repo.git(&["add", "--", name]);
+        repo.git(&["commit", "-m", "fix: ajustar recurso"]);
+        failure(&repo.without_ai(&["--check"]), "desatualizada");
+        assert_eq!(repo.calls(), 0);
+    }
+}
+
+#[test]
+fn supplied_note_can_replace_prose_and_rejects_invalid_input_without_writing() {
+    let repo = Repo::new();
+    repo.commit("app.txt", "entrega\n", "feat: entregar");
+    let note = repo.note_file("### Primeira versão\n\nResultado.");
+    let file = note.to_str().unwrap();
+    success(&repo.without_ai(&["--entry-file", file, "--yes"]));
+    let first = repo.document();
+    fs::write(&note, "### Texto revisado\n\nResultado explicado.").unwrap();
+    success(&repo.without_ai(&["--entry-file", file, "--yes"]));
+    let revised = repo.document();
+    assert!(revised.contains("Texto revisado"));
+    assert!(!revised.contains("Primeira versão"));
+    assert_eq!(
+        first.lines().find(|s| s.contains("fingerprint:")),
+        revised.lines().find(|s| s.contains("fingerprint:"))
+    );
+    for invalid in ["nota sem título".to_owned(), "x".repeat(17 * 1024)] {
+        fs::write(&note, invalid).unwrap();
+        assert!(
+            !repo
+                .without_ai(&["--entry-file", file, "--yes"])
+                .status
+                .success()
+        );
+        assert_eq!(repo.document(), revised);
+    }
+    assert!(
+        !repo
+            .without_ai(&["--entry-file", "missing.md", "--yes"])
+            .status
+            .success()
+    );
+    assert_eq!(repo.document(), revised);
+}
+
+#[test]
+fn metadata_fingerprint_tracks_paths_modes_deletions_submodules_and_context() {
+    let repo = Repo::new();
+    repo.commit("z.txt", "z\n", "feat: adicionar z");
+    repo.commit("a.txt", "a\n", "feat: adicionar a");
+    let note = repo.note_file("### Entrega\n\nResultado revisado.");
+    let file = note.to_str().unwrap();
+    let context = repo.directory.path().join("context.txt");
+    fs::write(&context, "intenção").unwrap();
+    let context_path = context.to_str().unwrap();
+    let record = || {
+        success(&repo.without_ai(&[
+            "--entry-file",
+            file,
+            "--context-file",
+            context_path,
+            "--yes",
+        ]))
+    };
+    let check = || repo.without_ai(&["--context-file", context_path, "--check"]);
+    record();
+    let order = repo.directory.path().join("order.txt");
+    fs::write(&order, "z*\na*\n").unwrap();
+    repo.git(&["config", "diff.orderFile", order.to_str().unwrap()]);
+    success(&check());
+    repo.git(&["mv", "a.txt", "renamed.txt"]);
+    repo.git(&["commit", "-m", "refactor: renomear"]);
+    failure(&check(), "desatualizada");
+    record();
+    repo.git(&["update-index", "--chmod=+x", "z.txt"]);
+    repo.git(&["commit", "-m", "build: marcar executável"]);
+    failure(&check(), "desatualizada");
+    record();
+    repo.git(&["rm", "renamed.txt"]);
+    repo.git(&["commit", "-m", "refactor: remover arquivo"]);
+    failure(&check(), "desatualizada");
+    record();
+    let target = repo.git(&["rev-parse", "HEAD"]);
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        &format!("160000,{},module", target.trim()),
+    ]);
+    repo.git(&["commit", "-m", "feat: incluir submódulo"]);
+    failure(&check(), "desatualizada");
+    record();
+    success(&check());
+    fs::write(&context, "outra intenção").unwrap();
+    failure(&check(), "desatualizada");
+}
+
+#[test]
+fn legacy_entries_remain_verifiable_and_only_the_updated_entry_is_converted() {
+    let repo = Repo::new();
+    repo.commit("app.txt", "entrega\n", "feat: entregar");
+    let diff = repo.git(&[
+        "diff",
+        "--ignore-submodules=none",
+        "--no-relative",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-color",
+        "--no-renames",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--submodule=short",
+        "--unified=3",
+        "--full-index",
+        "--diff-algorithm=myers",
+        "--no-indent-heuristic",
+        "--inter-hunk-context=0",
+        "main",
+        "HEAD",
+        "--",
+        ".",
+        ":(top,exclude)CHANGELOG.md",
+    ]);
+    let input = serde_json::json!({"format": 1, "diff": diff, "context": ""}).to_string();
+    let hash_file = repo.directory.path().join("fingerprint.json");
+    fs::write(&hash_file, input).unwrap();
+    let hash = repo.git(&["hash-object", "--no-filters", hash_file.to_str().unwrap()]);
+    let other = format!(
+        "<!-- clean-dev-cycle:pr:7:start -->\n<!-- clean-dev-cycle:fingerprint:{} -->\n### Histórico (#7)\n\nPreservado.\n<!-- clean-dev-cycle:pr:7:end -->\n",
+        "a".repeat(40)
+    );
+    let legacy = format!(
+        "# Changelog\n\nIntrodução manual.\n\n## [Não lançado]\n\n<!-- clean-dev-cycle:pr:42:start -->\n<!-- clean-dev-cycle:fingerprint:{} -->\n### Entrega antiga (#42)\n\nResultado.\n<!-- clean-dev-cycle:pr:42:end -->\n\n## [0.1.0]\n\n{other}",
+        hash.trim()
+    );
+    fs::write(repo.root.join("CHANGELOG.md"), &legacy).unwrap();
+    success(&repo.without_ai(&["--check"]));
+    success(&repo.without_ai(&["--yes"]));
+    assert_eq!(repo.document(), legacy);
+    let note = repo.note_file("### Entrega atualizada\n\nResultado revisado.");
+    success(&repo.without_ai(&["--entry-file", note.to_str().unwrap(), "--yes"]));
+    assert!(repo.document().contains("fingerprint:v2:"));
+    assert!(repo.document().ends_with(&format!("## [0.1.0]\n\n{other}")));
+    success(&repo.without_ai(&["--check"]));
 }

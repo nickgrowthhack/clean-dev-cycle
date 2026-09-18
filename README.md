@@ -23,7 +23,7 @@ A política de changelog exige nota quando o PR contém `feat`, `fix`, `perf` ou
 qualquer quebra de compatibilidade. Para os demais tipos a nota é opcional.
 A classificação considera todos os commits, sem inferência por IA. A nota
 sempre sintetiza o resultado completo do PR. O CI que aplicará essa política
-e a alternativa de nota por arquivo são as próximas entregas do
+é a próxima entrega do
 [ciclo inicial](docs/plans/initial-cycle.md).
 
 ## Criar um commit
@@ -104,6 +104,24 @@ validador. Formatação que altera o stage deve ocorrer antes da geração.
 
 Cada entrada representa a **entrega completa de um pull request**. O Codex revisa o diff acumulado entre a base comum e a branch do PR e propõe uma síntese em português: resultado, impacto para quem usa e eventuais incompatibilidades. As mensagens individuais de commit não são usadas como uma lista de mudanças.
 
+Para fornecer uma nota revisada sem usar IA, escreva um título `###`, uma linha
+em branco e a síntese completa em um arquivo UTF-8 de até 16 KiB:
+
+```sh
+clean-dev-cycle changelog --base origin/main --pr 42 --entry-file nota.md
+```
+
+O arquivo não precisa ser versionado. A CLI valida a estrutura e permite
+confirmar, editar ou cancelar. `--dry-run` exibe sem gravar e sem IA nesse modo,
+e `--yes` confirma explicitamente. A opção não combina com `--check`, `--model`,
+`--codex` ou `--timeout`. Fornecer outra nota permite revisar a redação mesmo
+quando as mudanças do PR permanecem iguais.
+
+Use esse caminho quando a IA estiver indisponível ou a entrega incluir binários,
+conteúdo não UTF-8, submódulos ou um diff grande. A revisão do conteúdo continua
+sendo responsabilidade de quem prepara e revisa o PR. A ferramenta não resume
+somente os arquivos que consegue ler nem troca de modo automaticamente.
+
 Com os commits da entrega concluídos, execute na branch do PR, **antes do merge**, usando a referência local de destino atualizada e o número real do PR:
 
 ```sh
@@ -117,7 +135,7 @@ O arquivo é criado na raiz quando necessário. Uma nova entrada vai para `Não 
 
 A seleção equivale a `git diff BASE...HEAD`, excluindo o próprio `CHANGELOG.md`. Isso reúne os resultados de todos os commits do PR, sem incluir mudanças independentes que chegaram à branch de destino. Alterações no stage ou ainda não commitadas ficam fora da revisão. O comando não cria commits, altera o stage, faz fetch, consulta o GitHub ou publica conteúdo; `--pr` identifica a entrada e `--base`/`--head` definem o intervalo local que você está associando a esse PR. Para revisar outra branch, informe `--head BRANCH`.
 
-Use `--context-file contexto.txt` para acrescentar a intenção da entrega ou esclarecer uma dúvida levantada pelo Codex. As opções `--model`, `--codex` e `--timeout` funcionam como no comando `commit`. A geração, inclusive em `--dry-run`, usa IA e pode consumir cota. O diff completo precisa ser textual, UTF-8 e ter até 128 KiB; diffs maiores, binários, submódulos, nomes sensíveis e histórico raso são recusados antes de chamar a IA. Nenhuma parte do diff é truncada para produzir uma síntese parcial.
+Use `--context-file contexto.txt` para acrescentar a intenção da entrega ou esclarecer uma dúvida levantada pelo Codex. As opções `--model`, `--codex` e `--timeout` funcionam como no comando `commit`. Sem `--entry-file`, a geração, inclusive em `--dry-run`, usa IA e pode consumir cota. O diff enviado à IA precisa ser textual, UTF-8 e ter até 128 KiB. Diffs maiores, binários, submódulos e nomes sensíveis são recusados nesse modo, com indicação da alternativa manual. Nenhuma parte do diff é truncada. Todos os modos exigem histórico completo.
 
 Para conferir se a entrada corresponde ao diff e ao contexto atuais, sem chamar a IA nem escrever:
 
@@ -126,6 +144,17 @@ clean-dev-cycle changelog --base origin/main --pr 42 --check
 ```
 
 O código de saída é zero quando a entrada está atualizada e não zero quando está ausente, desatualizada ou há um erro. Reutilize o mesmo `--context-file`, caso tenha sido usado na geração. Como o changelog é excluído da comparação, fazer commit da própria entrada não exige outra revisão. Repetir o comando com o mesmo diff e contexto também não chama a IA novamente. A verificação confirma a correspondência com a revisão registrada; a qualidade da síntese continua sendo revisada no PR.
+
+Novas entradas usam um fingerprint `v2` calculado dos caminhos, modos e IDs
+completos dos objetos Git antes e depois da mudança, mais o contexto. A ordem
+dos arquivos é estável. Somente `CHANGELOG.md` fica fora da comparação.
+Assim, `--check` funciona também com binários e diffs grandes, sem usar IA ou
+ler um patch textual. Metadados continuam sujeitos ao limite operacional de
+leitura de 4 MiB, sem truncamento.
+
+Notas antigas permanecem intactas e usam a verificação anterior, baseada no diff
+textual e em seus limites. Atualizar explicitamente uma entrada gera seu novo
+fingerprint, preservando as outras notas e versões. Não edite os hashes à mão.
 
 Em CI, faça checkout da branch real do PR, obtenha o histórico completo e a referência de destino antes de executar `--check`. Por exemplo, com essas referências já disponíveis:
 
