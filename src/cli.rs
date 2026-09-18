@@ -71,7 +71,8 @@ pub struct CheckCommitOptions {
 
 const CHANGELOG_HELP: &str = "Uso: clean-dev-cycle changelog --base REF --pr NÚMERO [OPÇÕES]
 
-Usa o Codex para revisar o diff completo desde a base comum até HEAD.
+Usa o Codex para revisar o diff completo desde a base comum até HEAD,
+ou recebe uma nota revisada por --entry-file, sem chamar IA.
 Propõe uma síntese da entrega em português, para confirmar, editar ou cancelar.
 Grava uma entrada por PR em CHANGELOG.md na raiz, preservando as demais notas.
 
@@ -79,7 +80,8 @@ Opções:
   --base REF            Branch ou referência local de destino do PR (obrigatória).
   --pr NÚMERO           Número do PR que identifica a entrada (obrigatório).
   --head REF            Referência local da entrega (padrão: HEAD).
-  --dry-run             Gerar e exibir a entrada sem gravar (usa IA).
+  --entry-file CAMINHO  Fornecer a nota em Markdown, sem IA.
+  --dry-run             Exibir a entrada sem gravar (usa IA sem --entry-file).
   --check               Conferir se a entrada corresponde ao diff, sem IA ou escrita.
   --yes                 Confirmar a entrada válida sem interação.
   --context-file CAMINHO Acrescentar intenção e contexto do PR em UTF-8.
@@ -98,6 +100,7 @@ pub struct ChangelogOptions {
     pub head: OsString,
     pub pr: u64,
     pub check: bool,
+    pub entry_file: Option<PathBuf>,
     pub generation: Options,
 }
 
@@ -200,6 +203,7 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
     let mut head = None;
     let mut pr = None;
     let mut check = false;
+    let mut entry_file = None;
     let mut generation = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut arguments = arguments.into_iter();
@@ -209,7 +213,7 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
         }
         match argument.to_str() {
             Some("--check") => check = true,
-            Some("--base" | "--head" | "--pr") => {
+            Some("--base" | "--head" | "--pr" | "--entry-file") => {
                 let value = arguments
                     .next()
                     .filter(|v| !v.is_empty() && !v.to_string_lossy().starts_with('-'))
@@ -219,6 +223,7 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
                 match argument.to_str().unwrap() {
                     "--base" => base = Some(value),
                     "--head" => head = Some(value),
+                    "--entry-file" => entry_file = Some(PathBuf::from(value)),
                     _ => {
                         pr = Some(
                             value
@@ -242,6 +247,17 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
             _ => generation.push(argument),
         }
     }
+    if entry_file.is_some()
+        && (check
+            || ["--model", "--codex", "--timeout"]
+                .iter()
+                .any(|option| seen.contains(&OsString::from(option))))
+    {
+        return Err(
+            "use --entry-file separadamente de --check e das opções --model, --codex e --timeout."
+                .into(),
+        );
+    }
     let generation = parse_options(generation.into_iter())?;
     if check && (generation.dry_run || generation.yes) {
         return Err("use --check separadamente de --dry-run e --yes.".into());
@@ -251,6 +267,7 @@ fn parse_changelog(arguments: Vec<OsString>) -> Result<Action> {
         head: head.unwrap_or_else(|| "HEAD".into()),
         pr: pr.ok_or("informe o número do PR com --pr.")?,
         check,
+        entry_file,
         generation,
     }))
 }

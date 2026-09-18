@@ -50,21 +50,39 @@ pub fn run(options: ChangelogOptions) -> Result<()> {
             "o intervalo precisa ter uma única base comum para revisar o diff completo.".into(),
         );
     }
-    let diff = repository.diff_between(bases[0], &head)?;
+    let manifest = repository.change_manifest(bases[0], &head)?;
     let context = read_context(&options)?;
-    let fingerprint = fingerprint(&repository, &diff, &context)?;
+    let fingerprint = fingerprint_v2(&repository, &manifest, &context)?;
     let path = repository.root.join(FILE);
     let original = read_document(&path)?;
     let document = original.as_deref().unwrap_or("# Changelog\n");
     let entry = find_entry(document, options.pr)?;
+    let supplied = options
+        .entry_file
+        .as_ref()
+        .map(|path| provider::read_text(path, message::MAX_MESSAGE_BYTES))
+        .transpose()?;
+    let current_fingerprint = if supplied.is_none()
+        && entry
+            .as_ref()
+            .is_some_and(|entry| !entry.fingerprint.starts_with("v2:"))
+    {
+        let diff = repository
+            .diff_between(bases[0], &head)
+            .map_err(manual_advice)?;
+        fingerprint_legacy(&repository, &diff, &context)?
+    } else {
+        fingerprint.clone()
+    };
     repository.ensure_unchanged(&snapshot)?;
     if resolve(&repository, &options.base)? != base || resolve(&repository, &options.head)? != head
     {
         return Err("uma referência do PR mudou durante a revisão. Execute novamente.".into());
     }
-    if entry
-        .as_ref()
-        .is_some_and(|entry| entry.fingerprint == fingerprint)
+    if supplied.is_none()
+        && entry
+            .as_ref()
+            .is_some_and(|entry| entry.fingerprint == current_fingerprint)
     {
         println!(
             "A entrada do PR #{} já corresponde ao diff revisado.",
@@ -88,18 +106,26 @@ pub fn run(options: ChangelogOptions) -> Result<()> {
     let signal = Arc::clone(&cancelled);
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))
         .map_err(|e| format!("não foi possível preparar o cancelamento: {e}."))?;
-    eprintln!(
-        "Revisando a entrega completa do PR #{} com Codex CLI...",
-        options.pr
-    );
-    let generated = provider::generate_with(
-        &options.generation,
-        &diff,
-        &context,
-        &cancelled,
-        INSTRUCTIONS,
-        validate,
-    )?;
+    let generated = if let Some(text) = &supplied {
+        validate(text)?
+    } else {
+        let diff = repository
+            .diff_between(bases[0], &head)
+            .map_err(manual_advice)?;
+        eprintln!(
+            "Revisando a entrega completa do PR #{} com Codex CLI...",
+            options.pr
+        );
+        provider::generate_with(
+            &options.generation,
+            &diff,
+            &context,
+            &cancelled,
+            INSTRUCTIONS,
+            validate,
+        )
+        .map_err(manual_advice)?
+    };
     repository.ensure_unchanged(&snapshot)?;
     if resolve(&repository, &options.base)? != base || resolve(&repository, &options.head)? != head
     {
@@ -154,6 +180,14 @@ pub fn run(options: ChangelogOptions) -> Result<()> {
     }
     if read_context(&options)? != context || read_document(&path)? != original {
         return Err("o contexto ou CHANGELOG.md mudou durante a revisão. Confira as alterações e execute novamente.".into());
+    }
+    if let (Some(path), Some(text)) = (&options.entry_file, &supplied)
+        && provider::read_text(path, message::MAX_MESSAGE_BYTES)? != *text
+    {
+        return Err(
+            "o arquivo da nota mudou durante a revisão. Confira o conteúdo e execute novamente."
+                .into(),
+        );
     }
     if original.is_some() {
         let permissions = fs::metadata(&path)
@@ -211,8 +245,24 @@ fn read_context(options: &ChangelogOptions) -> Result<String> {
         .map(|context| context.unwrap_or_default())
 }
 
-fn fingerprint(repository: &Repository, diff: &str, context: &str) -> Result<String> {
+fn manual_advice(error: String) -> String {
+    format!(
+        "{error}\nPara registrar uma síntese revisada sem IA, use --entry-file CAMINHO com a nota completa do PR."
+    )
+}
+
+fn fingerprint_v2(repository: &Repository, manifest: &[u8], context: &str) -> Result<String> {
+    let input =
+        serde_json::json!({"format": 2, "changes": manifest, "context": context}).to_string();
+    hash(repository, input).map(|hash| format!("v2:{hash}"))
+}
+
+fn fingerprint_legacy(repository: &Repository, diff: &str, context: &str) -> Result<String> {
     let input = serde_json::json!({"format": 1, "diff": diff, "context": context}).to_string();
+    hash(repository, input)
+}
+
+fn hash(repository: &Repository, input: String) -> Result<String> {
     let output = process::capture(
         repository.command().args(["hash-object", "--stdin"]),
         input.into_bytes(),
@@ -284,7 +334,8 @@ fn find_entry(document: &str, pr: u64) -> Result<Option<Entry<'_>>> {
         .strip_prefix("<!-- clean-dev-cycle:fingerprint:")
         .and_then(|value| value.strip_suffix(" -->"))
         .filter(|value| {
-            [40, 64].contains(&value.len()) && value.bytes().all(|b| b.is_ascii_hexdigit())
+            let hash = value.strip_prefix("v2:").unwrap_or(value);
+            [40, 64].contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit())
         })
         .ok_or(error)?;
     let (title, body) = text.split_once('\n').ok_or(error)?;

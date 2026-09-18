@@ -147,6 +147,55 @@ impl Repository {
         self.selected_diff(&[base, head], &[".", ":(top,exclude)CHANGELOG.md"])
     }
 
+    pub fn change_manifest(&self, base: &str, head: &str) -> Result<Vec<u8>> {
+        let raw = self.read(&[
+            "diff",
+            "--raw",
+            "--no-abbrev",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--ignore-submodules=none",
+            "-z",
+            base,
+            head,
+            "--",
+            ".",
+            ":(top,exclude)CHANGELOG.md",
+        ])?;
+        if raw.is_empty() {
+            return Err("não há alterações no intervalo do PR além de CHANGELOG.md. Execute na branch do PR antes do merge.".into());
+        }
+        // With renames disabled, each raw record is metadata NUL path NUL.
+        // Keep paths as bytes and sort explicitly, independent of diff.orderFile.
+        let fields: Vec<_> = raw
+            .strip_suffix(&[0])
+            .ok_or("manifesto Git incompleto.")?
+            .split(|&byte| byte == 0)
+            .collect();
+        let mut records = Vec::new();
+        let (pairs, remainder) = fields.as_chunks::<2>();
+        for pair in pairs {
+            if !pair[0].starts_with(b":") || pair[1].is_empty() {
+                return Err("manifesto Git inválido.".into());
+            }
+            records.push((pair[1], pair[0]));
+        }
+        if !remainder.is_empty() {
+            return Err("manifesto Git incompleto.".into());
+        }
+        records.sort_unstable_by_key(|record| record.0);
+        let mut manifest = Vec::with_capacity(raw.len());
+        for (path, metadata) in records {
+            manifest.extend_from_slice(metadata);
+            manifest.push(0);
+            manifest.extend_from_slice(path);
+            manifest.push(0);
+        }
+        Ok(manifest)
+    }
+
     fn selected_diff(&self, selection: &[&str], paths: &[&str]) -> Result<String> {
         let arguments = |flags: &[&str]| {
             let mut args = vec!["diff".to_owned()];
