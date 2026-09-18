@@ -38,6 +38,23 @@ pub fn validate(input: &str) -> Result<String> {
 mod tests {
     use super::*;
     #[test]
+    fn fixed_profile_counts_unicode_and_accepts_free_body_style() {
+        for character in ['a', 'á', '😀'] {
+            let title = format!("feat: {}", character.to_string().repeat(94));
+            assert_eq!(validate(&title).unwrap(), title);
+            assert!(validate(&format!("{title}{character}")).is_err());
+        }
+        let text = format!(
+            "fix: Corrigir seleção.\r\n\r\n{}\r\n\r\nRefs: #12\r\n",
+            "á".repeat(200)
+        );
+        assert_eq!(validate(&text).unwrap(), text.replace("\r\n", "\n").trim());
+        assert!(validate(&format!("fix: título\n\n{}", "a".repeat(MAX_MESSAGE_BYTES))).is_err());
+        for control in ['\0', '\u{1b}', '\r'] {
+            assert!(validate(&format!("fix: antes{control}depois")).is_err());
+        }
+    }
+    #[test]
     fn accepts_breaking_changes_and_git_trailers() {
         for text in [
             "feat(cli): permitir revisão da mensagem",

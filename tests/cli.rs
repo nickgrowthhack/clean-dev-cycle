@@ -40,6 +40,34 @@ fn version_matches_the_installable_package() {
 fn invalid_invocations_cannot_report_success() {
     for arguments in [
         &["--inexistente"][..],
+        &["check-commit"][..],
+        &["check-commit", "--from", "main"][..],
+        &[
+            "check-commit",
+            "--message-file",
+            "message",
+            "--config",
+            "policy.toml",
+        ][..],
+        &[
+            "check-commit",
+            "--message-file",
+            "message",
+            "--from",
+            "main",
+            "--to",
+            "HEAD",
+        ][..],
+        &[
+            "check-commit",
+            "--from",
+            "main",
+            "--to",
+            "HEAD",
+            "--to",
+            "main",
+        ][..],
+        &["check-commit", "--message-file", "message", "--yes"][..],
         &["ação-desconhecida"][..],
         &["--version", "extra"][..],
         &["--help", "--version"][..],
@@ -75,6 +103,25 @@ fn invalid_invocations_cannot_report_success() {
         assert!(error.contains("Erro:"));
         assert!(error.contains("--help"));
     }
+}
+
+#[test]
+fn check_commit_help_describes_the_fixed_read_only_interface() {
+    let output = invoke(&["check-commit", "--help"]);
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "--message-file",
+        "--from",
+        "--to",
+        "Não chama IA",
+        "0",
+        "1",
+        "2",
+    ] {
+        assert!(help.contains(expected), "{expected}");
+    }
+    assert!(!help.contains("--config"));
 }
 
 #[test]
