@@ -1,195 +1,123 @@
 # clean-dev-cycle
 
-Uma ferramenta em desenvolvimento para dividir o trabalho dos desenvolvedores em
-entregas pequenas, verificáveis e ligadas a um objetivo comum.
+Uma CLI para concluir mudanças pequenas e integrá-las automaticamente após o CI.
+Jujutsu organiza o trabalho local. GitHub recebe uma camada por vez, sem PR obrigatório.
 
-- [Estratégia de branching](docs/branching.md): nomes, integração e dependências entre entregas.
-- [Plano do ciclo inicial](docs/plans/initial-cycle.md): objetivo, decisões e critérios de conclusão.
+```text
+mudança no jj → commit → submit → CI → main
+```
 
-CLI em Rust para automatizar commits, revisar entregas de pull requests para o changelog e apoiar o ciclo de releases.
+Uma mudança deve resolver uma parte compreensível do problema e manter o projeto
+funcionando. Não é necessário terminar uma funcionalidade inteira para integrar.
+O [guia do fluxo](docs/branching.md) explica stacks, falhas e recuperação.
 
-## Método de trabalho
+## Preparar o ambiente
 
-Conclua uma mudança significativa por vez, com objetivo e verificação claros.
-Código, testes e documentação que explicam o mesmo resultado pertencem à mesma
-entrega. Preserve commits compreensíveis e integre o PR por rebase.
-
-O PR concentra estado, responsáveis, discussão e evidências. O plano versionado
-guarda objetivo, decisões, dependências e critérios de conclusão. Não crie um
-commit apenas para atualizar o status de outro PR. Títulos de PR são descritivos
-e livres. Tipos convencionais ficam nas mensagens dos commits.
-
-A política de changelog exige nota quando o PR contém `feat`, `fix`, `perf` ou
-qualquer quebra de compatibilidade. Para os demais tipos a nota é opcional.
-A classificação considera todos os commits, sem inferência por IA. A nota
-sempre sintetiza o resultado completo do PR. O CI aplica essa política sem
-exigir rótulos ou declarações adicionais de impacto.
-
-## Criar um commit
-
-É necessário ter Git, Rust 1.98.1 e Codex CLI instalado e autenticado. Para instalar a versão deste checkout:
+Instale Git, [Jujutsu 0.45.1](https://github.com/jj-vcs/jj/releases/tag/v0.45.1)
+e o toolchain Rust 1.98.1 indicado em `rust-toolchain.toml`.
+Os executáveis devem estar no PATH. Codex CLI autenticado é necessário apenas
+para gerar mensagens ou notas com IA.
 
 ```sh
 cargo install --path . --locked
+jj git init --colocate
+jj config set --repo user.name "Seu nome"
+jj config set --repo user.email "seu-email"
+jj git fetch --remote origin
+jj bookmark track main@origin
 ```
 
-Selecione as alterações que pertencem ao commit e execute:
+Em um workspace sem trabalho em andamento, comece sobre a versão atual:
 
 ```sh
-git add caminho/do/arquivo
+jj new main@origin
+```
+
+## Concluir e enviar uma mudança
+
+Edite os arquivos e confira `jj diff`. Use `jj split` se houver mudanças
+independentes. Para gerar uma descrição e confirmá-la:
+
+```sh
 clean-dev-cycle commit
+clean-dev-cycle submit
 ```
 
-O comando envia o diff do stage ao Codex, valida a mensagem em Conventional Commits e exibe uma prévia em português do Brasil. Pressione Enter para confirmar, `e` para escrever uma nova mensagem ou `n` para cancelar. Na edição, termine com uma linha contendo apenas `.`. A mensagem editada também passa por validação e confirmação.
+`commit` revisa o diff de `@`. Enter confirma, `e` permite editar e `n` cancela.
+Na edição, termine com uma linha contendo apenas `.` e confirme a nova mensagem.
+Confirmar descreve a mudança e abre a próxima, como `jj commit`.
+O comando preserva o conteúdo revisado. Se o workspace mudar durante a geração,
+ele recusa a confirmação. Edições posteriores ao snapshot final ficam na próxima
+mudança, sem entrar silenciosamente no commit revisado.
 
-Para testar a geração sem criar um commit:
+Para escrever a mensagem sem IA:
 
 ```sh
-clean-dev-cycle commit --dry-run
+jj commit -m "fix: corrigir a leitura do arquivo"
+clean-dev-cycle submit
 ```
 
-`--dry-run` usa o Codex e pode consumir sua cota. Para fornecer a intenção da mudança, use um arquivo de texto UTF-8:
+`submit` atualiza `origin`, valida a mudança concluída em `@-` e envia somente
+essa camada para o bookmark reutilizável `nick/submit`. O CI testa Linux e Windows
+e promove exatamente o SHA aprovado para `main`. Não é necessário fazer merge.
+Você pode continuar editando a próxima mudança enquanto o CI executa.
+
+Para escolher uma camada anterior do stack:
 
 ```sh
-clean-dev-cycle commit --context-file contexto.txt
+clean-dev-cycle submit --revision ID_DA_MUDANCA
 ```
 
-Se faltar contexto essencial, o comando informa a dúvida e encerra. Acrescente a explicação ao arquivo e execute novamente. O contexto é enviado junto com o diff; revise seu conteúdo e mantenha o arquivo fora do stage se ele não fizer parte da entrega.
+A camada precisa ser filha direta de `main@origin`. Um envio mais novo substitui
+o candidato anterior, e o workflow cancela a execução anterior ainda em andamento.
+Reenviar um SHA já integrado informa sucesso sem publicar outra mudança.
+Confira a execução na [página de Actions](https://github.com/nickgrowthhack/clean-dev-cycle/actions).
 
-Também estão disponíveis `--yes` para confirmar sem interação, `--model MODELO`, `--codex CAMINHO` e `--timeout SEGUNDOS` (120 por chamada). Consulte `clean-dev-cycle commit --help`.
+## Opções e limites da geração
 
-O Codex é localizado primeiro no PATH. No Windows, se ele não estiver no PATH, a CLI procura o executável incluído no aplicativo Codex, em `%LOCALAPPDATA%/OpenAI/Codex/bin`. Se houver mais de uma versão nessa pasta, informe `--codex CAMINHO` para escolher. Um caminho explícito tem prioridade sobre a detecção automática.
+`commit --dry-run` mostra a proposta sem descrever ou concluir a mudança.
+`--yes` confirma sem interação. `--context-file ARQUIVO` acrescenta intenção em
+UTF-8, até 16 KiB. Também há `--model`, `--codex` e `--timeout` (120 segundos).
+A geração, inclusive em simulação, utiliza o Codex e pode consumir cota.
+Comandos de leitura do Jujutsu podem salvar snapshots locais.
 
-O comando preserva a seleção parcial de arquivos e executa os hooks existentes do Git. Se o stage, HEAD ou a branch mudar durante a geração ou pelos hooks anteriores ao commit, a operação é recusada para permitir uma nova revisão. Alterações feitas pelos próprios hooks permanecem disponíveis para inspeção. O comando não faz push.
+O diff enviado à IA deve ser textual, UTF-8 e ter até 128 KiB. Binários,
+submódulos, nomes potencialmente sensíveis e diffs maiores são recusados.
+Nenhuma parte é truncada. Para esses casos, revise o conteúdo e use `jj commit`.
+O stage e os hooks do Git não participam do fluxo Jujutsu.
 
-A integração usa a autenticação padrão OpenAI do Codex e reaproveita `model` e `model_reasoning_effort` do `config.toml`. As demais configurações pessoais, plugins e ferramentas ficam desativadas durante a geração, realizada em um diretório temporário separado. É necessária uma versão do Codex CLI com suporte a `exec --ignore-user-config` e `--output-schema`.
+A integração com Codex mantém modelo e esforço de raciocínio da configuração
+pessoal. A geração ocorre em diretório temporário, com ferramentas desativadas.
+Uma mensagem inválida recebe no máximo uma tentativa de correção.
 
-Nesta versão, o diff precisa ser textual, UTF-8 e ter até 128 KiB; arquivos binários, submódulos e operações de merge/rebase em andamento são recusados. O contexto adicional aceita até 16 KiB. Nomes comuns de arquivos sensíveis, como `.env` e chaves privadas, são bloqueados; isso não substitui a revisão do conteúdo selecionado. Uma resposta inválida do Codex recebe no máximo uma tentativa de correção.
-
-## Validar commits sem IA
+## Validar mensagens sem IA
 
 ```sh
 clean-dev-cycle check-commit --message-file mensagem.txt
-clean-dev-cycle check-commit --from origin/main --to HEAD
+clean-dev-cycle check-commit --from origin/main~1 --to origin/main
 ```
 
-O primeiro comando lê um arquivo UTF-8, inclusive fora de um repositório e sem
-precisar de Git. O segundo valida todos os commits de `FROM..TO`, incluindo
-commits de branches integradas. Exige histórico completo, resolve as referências
-para commits e informa todas as mensagens inválidas. Um intervalo vazio passa.
-Nenhum dos modos chama IA ou modifica mensagens, stage, arquivos ou histórico.
-Saídas: `0` para sucesso, `1` para erro de leitura/validação e `2` para uso inválido.
+O perfil continua sendo Conventional Commits, com título de até 100 caracteres
+Unicode e mensagem de até 16 KiB. Corpo longo, maiúsculas e ponto final são
+permitidos. O modo arquivo funciona sem repositório. Intervalos usam referências
+Git e exigem histórico completo. Códigos de saída: `0` sucesso, `1` falha e `2` uso inválido.
 
-Um único perfil vale para geração, edição, hooks e validação: Conventional
-Commits com os tipos `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `style`,
-`ci`, `build`, `chore` e `revert`, descrição obrigatória e título de até 100
-caracteres Unicode. A contagem usa os valores escalares Unicode, não unidades
-UTF-16 ou agrupamentos visuais. Maiúsculas, ponto final e linhas longas no corpo
-são permitidos. Corpo e rodapés seguem a estrutura convencional. O limite total
-é 16 KiB, com rejeição de caracteres de controle inválidos. Preservamos o perfil
-já usado pela CLI. Não há configuração por projeto nem dependência de commitlint.
+## Comunicar uma entrega
 
-Para validar commits manuais, acrescente ao hook `commit-msg` existente:
+O changelog é opcional e independente da integração. Escolha o intervalo Git
+que representa o resultado a comunicar:
 
 ```sh
-clean-dev-cycle check-commit --message-file "$1" || exit $?
+clean-dev-cycle changelog --from origin/main~1 --to origin/main
+clean-dev-cycle changelog --from origin/main~1 --to origin/main --entry-file nota.md
 ```
 
-Preserve os demais comandos do hook. A CLI não instala hooks automaticamente.
-Quando a geração por IA não atender à mudança, use `git commit` e o mesmo
-validador. Formatação que altera o stage deve ocorrer antes da geração.
-
-## Atualizar o changelog de um PR
-
-Cada entrada representa a **entrega completa de um pull request**. O Codex revisa o diff acumulado entre a base comum e a branch do PR e propõe uma síntese em português: resultado, impacto para quem usa e eventuais incompatibilidades. As mensagens individuais de commit não são usadas como uma lista de mudanças.
-
-Para fornecer uma nota revisada sem usar IA, escreva um título `###`, uma linha
-em branco e a síntese completa em um arquivo UTF-8 de até 16 KiB:
-
-```sh
-clean-dev-cycle changelog --base origin/main --pr 42 --entry-file nota.md
-```
-
-O arquivo não precisa ser versionado. A CLI valida a estrutura e permite
-confirmar, editar ou cancelar. `--dry-run` exibe sem gravar e sem IA nesse modo,
-e `--yes` confirma explicitamente. A opção não combina com `--check`, `--model`,
-`--codex` ou `--timeout`. Fornecer outra nota permite revisar a redação mesmo
-quando as mudanças do PR permanecem iguais.
-
-Use esse caminho quando a IA estiver indisponível ou a entrega incluir binários,
-conteúdo não UTF-8, submódulos ou um diff grande. A revisão do conteúdo continua
-sendo responsabilidade de quem prepara e revisa o PR. A ferramenta não resume
-somente os arquivos que consegue ler nem troca de modo automaticamente.
-
-Com os commits da entrega concluídos, execute na branch do PR, **antes do merge**, usando a referência local de destino atualizada e o número real do PR:
-
-```sh
-clean-dev-cycle changelog --base origin/main --pr 42 --dry-run
-clean-dev-cycle changelog --base origin/main --pr 42
-```
-
-O primeiro comando mostra a proposta sem escrever; o segundo permite confirmar, editar ou cancelar. Na edição, mantenha um título `###`, uma linha em branco e a síntese, terminando com uma linha contendo apenas `.`. Depois de confirmar, revise `CHANGELOG.md`, selecione-o com `git add CHANGELOG.md` e inclua-o no mesmo PR. `--yes` confirma sem interação.
-
-O arquivo é criado na raiz quando necessário. Uma nova entrada vai para `Não lançado`; novas revisões do mesmo PR substituem somente a entrada correspondente. Notas manuais, entradas de outros PRs e seções de versões existentes são preservadas. Não remova nem altere os comentários `clean-dev-cycle`: eles identificam o PR e o diff revisado. Ao organizar uma release, você pode mover a entrada inteira, com os comentários, para a seção da versão.
-
-A seleção equivale a `git diff BASE...HEAD`, excluindo o próprio `CHANGELOG.md`. Isso reúne os resultados de todos os commits do PR, sem incluir mudanças independentes que chegaram à branch de destino. Alterações no stage ou ainda não commitadas ficam fora da revisão. O comando não cria commits, altera o stage, faz fetch, consulta o GitHub ou publica conteúdo; `--pr` identifica a entrada e `--base`/`--head` definem o intervalo local que você está associando a esse PR. Para revisar outra branch, informe `--head BRANCH`.
-
-Use `--context-file contexto.txt` para acrescentar a intenção da entrega ou esclarecer uma dúvida levantada pelo Codex. As opções `--model`, `--codex` e `--timeout` funcionam como no comando `commit`. Sem `--entry-file`, a geração, inclusive em `--dry-run`, usa IA e pode consumir cota. O diff enviado à IA precisa ser textual, UTF-8 e ter até 128 KiB. Diffs maiores, binários, submódulos e nomes sensíveis são recusados nesse modo, com indicação da alternativa manual. Nenhuma parte do diff é truncada. Todos os modos exigem histórico completo.
-
-Para conferir se a entrada corresponde ao diff e ao contexto atuais, sem chamar a IA nem escrever:
-
-```sh
-clean-dev-cycle changelog --base origin/main --pr 42 --check
-```
-
-O código de saída é zero quando a entrada está atualizada e não zero quando está ausente, desatualizada ou há um erro. Reutilize o mesmo `--context-file`, caso tenha sido usado na geração. Como o changelog é excluído da comparação, fazer commit da própria entrada não exige outra revisão. Repetir o comando com o mesmo diff e contexto também não chama a IA novamente. A verificação confirma a correspondência com a revisão registrada; a qualidade da síntese continua sendo revisada no PR.
-
-Novas entradas usam um fingerprint `v2` calculado dos caminhos, modos e IDs
-completos dos objetos Git antes e depois da mudança, mais o contexto. A ordem
-dos arquivos é estável. Somente `CHANGELOG.md` fica fora da comparação.
-Assim, `--check` funciona também com binários e diffs grandes, sem usar IA ou
-ler um patch textual. Metadados continuam sujeitos ao limite operacional de
-leitura de 4 MiB, sem truncamento.
-
-Notas antigas permanecem intactas e usam a verificação anterior, baseada no diff
-textual e em seus limites. Atualizar explicitamente uma entrada gera seu novo
-fingerprint, preservando as outras notas e versões. Não edite os hashes à mão.
-
-Em CI, faça checkout da branch real do PR, obtenha o histórico completo e a referência de destino antes de executar `--check`. Por exemplo, com essas referências já disponíveis:
-
-```sh
-clean-dev-cycle changelog --base origin/main --head branch-do-pr --pr 42 --check
-```
-
-O fluxo não exige versionar cada commit nem gera releases ou tags. A organização posterior de vários PRs em uma versão permanece explícita no changelog.
-
-## Validar a entrega no CI
-
-```sh
-clean-dev-cycle check-ci --event-name pull_request --event-file evento.json
-```
-
-O comando lê o evento do GitHub Actions localmente, sem IA ou acesso à API.
-Exige checkout limpo do HEAD real do PR, histórico completo, base atualizada e
-ausência de merges. Valida todos os commits com o mesmo perfil de `check-commit`.
-O título do PR é descritivo e livre.
-
-Se qualquer commit for `feat`, `fix`, `perf` ou indicar incompatibilidade com
-`!`, `BREAKING CHANGE` ou `BREAKING-CHANGE`, exige nota atual em “Não lançado”.
-Nos demais PRs, nem a nota nem `CHANGELOG.md` são obrigatórios. Se uma nota
-para o PR existir, ela também precisa estar atualizada. Contexto adicional é
-opcional, mas deve estar versionado em `.changelog-context/NUMERO.md` e ser
-fornecido com `--context-file` ao registrar a nota.
-
-Uma correção exclusivamente editorial de `CHANGELOG.md` pode preservar suas
-notas sem gerar outra entrada, desde que não haja commits de impacto e que
-versões, ordem, identificadores, fingerprints e estrutura sejam preservados.
-
-O workflow de qualidade roda em PRs, pushes na `main` e execução manual, com
-Linux e Windows. O workflow de entrega roda em eventos de PR, incluindo mudança
-de base, e valida seu HEAD real. O merge de teste do GitHub é usado pelo workflow
-de qualidade para testar o resultado integrado. A obrigatoriedade dos checks
-depende também das [proteções da branch](docs/branching.md).
+O primeiro comando sintetiza o diff acumulado com IA. O segundo valida uma nota
+manual com título `###`, linha em branco e síntese, aceitando também entregas
+com binários ou diffs grandes. Ambos emitem somente Markdown em stdout.
+Não escrevem em `CHANGELOG.md`. As notas históricas permanecem preservadas.
+`--from` deve ser ancestral de `--to`. Não há número de PR, fingerprint ou
+nota obrigatória para liberar uma integração.
 
 ## Desenvolvimento
 
@@ -197,14 +125,22 @@ depende também das [proteções da branch](docs/branching.md).
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
-cargo build --release --locked
 ```
 
-Por padrão, os testes usam um provedor simulado e repositórios temporários; não chamam a IA nem alteram o histórico deste repositório. O teste opcional com o Codex autenticado consome cota e pode ser executado com `cargo test --locked --test commit real_codex -- --ignored --nocapture`. Ele usa um diff de exemplo em um repositório temporário e não cria commits.
+Os testes usam Jujutsu real, remotos Git temporários e um provedor de IA simulado.
+Não acessam a conta do Codex nem o histórico deste repositório.
+Windows usa Rust GNU, com `as`, `dlltool` e as DLLs do Git no PATH.
+`cargo build --release --locked` gera o binário otimizado quando necessário.
 
-Para testar manualmente sem instalar, use `cargo run -- commit --dry-run` ou o binário em `target/release`.
+O CI executa formatação e Clippy no Linux e testes/execução da CLI nos dois
+sistemas. A promoção exige `Qualidade`, histórico linear e avanço sem reescrita.
+Não há segunda execução da suíte após promover o mesmo SHA.
 
-No Windows, o toolchain GNU exige o MinGW-w64 com `as` e `dlltool` no PATH; o toolchain MSVC exige as ferramentas de compilação C++ e o Windows SDK. O CI verifica Windows com GNU e Linux.
+Versão, tag, release e deploy continuam fora desta integração. O
+[plano inicial](docs/plans/initial-cycle.md) foi encerrado como orientação operacional.
+
+As reflexões abaixo são preservadas como registro original. O procedimento
+vigente é o fluxo Jujutsu descrito acima, incluindo seus snapshots automáticos.
 
 ## Ideias jogadas que valem a pena ficarem registradas
 

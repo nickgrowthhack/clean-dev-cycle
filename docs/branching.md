@@ -1,62 +1,86 @@
-# Branching por entregas pequenas
+# Fluxo com Jujutsu
 
-Usamos trunk-based: branches curtas partem da `main` e retornam por PR com rebase.
-Um commit representa uma mudança significativa e concluída. Um PR pode reunir
-vários commits coerentes com o mesmo resultado. O histórico da `main` é preservado.
+Trabalhe em uma mudança pequena por vez. Mantenha dependências em um stack local
+e integre cada camada assim que ela estiver verificável. Jujutsu é a interface
+de trabalho. O Git permanece como armazenamento e transporte para GitHub.
 
-## Caminho habitual
+## Caminho cotidiano
 
-1. Defina o resultado e como verificá-lo. Conclua uma entrega antes de iniciar outra.
-2. Parta da `main` remota atualizada e use `<autor>/<escopo>/<entrega>` como nome.
-   Use minúsculas ASCII, números e hífens, sem hífens nas extremidades dos segmentos.
-   Confira o nome com `git check-ref-format --branch NOME`.
-3. Implemente código, testes e documentação da entrega. Selecione o stage com cuidado.
-4. Crie commits compreensíveis e valide o intervalo com `check-commit`.
-5. Abra o PR com título descritivo, resultado, validação e incompatibilidades.
-6. Registre a nota da entrega quando houver `feat`, `fix`, `perf` ou incompatibilidade.
-   Use o número real do PR. Para os demais tipos, a nota é opcional.
-7. Se a base avançar, atualize por rebase, revise conflitos e repita os checks.
-   Integre somente o SHA revisado e validado, sem bypass administrativo.
+1. Edite a mudança atual (`@`) e confira `jj diff`.
+2. Separe resultados independentes com `jj split`.
+3. Conclua com `clean-dev-cycle commit` ou `jj commit -m MENSAGEM`.
+4. Execute `clean-dev-cycle submit`. O padrão é a mudança concluída em `@-`.
+5. Continue a próxima camada enquanto o CI verifica o envio.
 
-O PR é a fonte do estado, responsáveis, discussão e evidências da entrega.
-O plano em `docs/plans/<escopo>.md` guarda objetivo, decisões, dependências e
-critérios de conclusão. Não espelhe estados do GitHub nem crie commits para
-registrar que outro PR foi integrado. Atualize o plano quando uma decisão mudar.
+Use `submit --revision ID` para enviar uma camada anterior. A ferramenta indica
+qual camada vem primeiro quando o stack ainda tem uma dependência não integrada.
+Não envie `@`, que ainda está em edição. Não há branches por escopo, worktrees por
+entrega, PR obrigatório ou fila própria. `main` e o bookmark `nick/submit` bastam.
 
-Tamanho do diff e duração do trabalho ajudam a identificar dificuldades, mas
-não demonstram que uma entrega esteja completa ou incompleta. Os limites do
-gerador por IA são técnicos. Não omita arquivos para produzir uma revisão parcial.
+## O que chega à main
 
-## Dependências reais
+O envio deve conter exatamente um commit filho da main atual, com alteração de
+arquivos, mensagem válida e sem conflitos. O CI verifica o SHA exato enviado.
+Somente após Linux, Windows e `Qualidade` passarem ele promove esse SHA por
+fast-forward. A promoção não cria merge nem reescreve commits.
 
-Compartilhar um escopo não implica dependência de código. Use worktrees separados
-quando houver necessidade de manter checkouts simultâneos. Uma entrega dependente
-pode ser revisada contra a branch predecessora, mas só integra na `main` após ela.
+A proteção exige `Qualidade` do GitHub Actions, inclusive para administrador.
+Force-push, exclusão da main e histórico não linear permanecem bloqueados.
+Changelog, release e deploy não bloqueiam a integração. A configuração remota
+da proteção deve acompanhar o nome do check no workflow.
 
-Registre no PR dependente o SHA da predecessora incluído em sua base. Depois da
-integração por rebase, reaplique somente os commits exclusivos da dependente com
-`git rebase --onto NOVA_BASE LIMITE_ANTIGO`. Confira `git range-diff`, mude a base do
-PR para `main` e repita a validação. A revisão contra a predecessora nunca autoriza
-integrar o trabalho dependente nela.
+## Quando algo falha
 
-Antes de reescrever uma branch publicada, confira o trabalho remoto e coordene
-com seus responsáveis. Use `--force-with-lease` com o SHA remoto conferido.
-Se o lease falhar, inspecione o trabalho novo. Não use `--force`.
+- Teste ou mensagem inválida: corrija a mudança com `jj edit ID`, confira o diff,
+  conclua novamente e reenvie. Descendentes são reaplicados pelo Jujutsu.
+- Base avançou: atualize o remoto e faça rebase da linha local com
+  `jj git fetch --remote origin` e `jj rebase -b @ -o main@origin`. Resolva os
+  conflitos, revise e reenvie. O novo SHA precisa de novos checks.
+- Envio substituído: acompanhe a execução mais recente. Uma execução antiga
+  não promove se detectar outro candidato no bookmark remoto.
+- Mudança já integrada: `submit` informa isso e não faz outro push.
+- Regressão integrada: prepare uma correção ou reversão como nova mudança e
+  passe pelo mesmo CI. Não reescreva a main.
 
-## Conflitos, recuperação e proteção
+Confira `jj op log` para investigar operações locais e `jj undo` para desfazer
+a última operação apropriada. Uma operação local não desfaz uma integração
+já publicada na main.
 
-Em conflitos, preserve a intenção de ambas as mudanças e as notas existentes.
-Se a intenção não estiver clara, aborte o rebase e peça esclarecimento. Use
-correção ou revert por PR para regressões na `main`, sem reescrever seu histórico.
+PRs e stacked PRs podem ser adotados para revisão colaborativa quando houver
+essa necessidade. Não fazem parte do caminho obrigatório deste fluxo individual.
 
-A política aplicada à `main` exige PR, base atualizada, histórico linear e os checks
-`Qualidade` e `Entrega do PR`, também para o administrador, sem force-push ou
-exclusão da `main`. Para o fluxo individual, não exige aprovação de outra pessoa.
-O único método de integração habilitado é rebase. As proteções são configurações
-remotas do repositório e precisam acompanhar os workflows. A evidência de sua
-ativação e conferência fica no PR da entrega de CI.
+## Migração do fluxo anterior
 
-O [plano inicial](plans/initial-cycle.md) separa a consulta às branches antigas
-do caminho cotidiano. Elas permanecem disponíveis como histórico, fora do fluxo
-ativo. Automação de branches, fila de integração e manutenção de
-várias versões não fazem parte deste primeiro ciclo.
+`commit` passou a operar sobre `@`, sem stage ou hooks Git. `check-ci` foi removido.
+`changelog --base ... --pr ... --check` foi substituído pela síntese opcional
+`changelog --from ... --to ...`. O histórico do changelog foi mantido.
+
+As branches antigas e os quatro worktrees auxiliares foram arquivados e retirados
+do workspace ativo. O backup local verificado está em
+`.tools/archive/2026-09-19-jj/repository.bundle`, acompanhado do inventário de SHAs.
+Ele foi restaurado em um repositório separado antes da limpeza. Esse arquivo é
+local, ignorado pelo Git, e não acompanha novos clones.
+
+Arquivamento não significa integração. Sete branches tiveram suas entregas
+integradas pelos PRs #2 a #8: `branching-strategy`, `commit-cli`, `changelog`,
+`commit-validation-simple`, `changelog-manual`, `ci-simple` e `main-protection`.
+Os commits resultantes continuam no histórico da main, mesmo onde esta migração
+substituiu o comportamento anterior.
+
+As branches `commit-validation` e `ci-delivery` ficaram somente no arquivo.
+A política configurável de mensagens e as regras daquele CI já haviam sido
+descartadas na simplificação anterior. Seus commits originais estão preservados
+no bundle. Todas as nove tinham o prefixo `nick/initial-cycle/`. O `README.md`
+do arquivo registra os SHAs, as integrações e o comando de restauração.
+
+## Tempos observados
+
+Na última entrega anterior, o [CI do PR #8](https://github.com/nickgrowthhack/clean-dev-cycle/actions/runs/35406796743)
+levou 3min28s e o [CI após o merge](https://github.com/nickgrowthhack/clean-dev-cycle/actions/runs/35407052355)
+levou 2min08s: 5min36s somados, sem contar a espera entre execuções.
+O [envio da CLI com Jujutsu](https://github.com/nickgrowthhack/clean-dev-cycle/actions/runs/35410391776)
+levou 2min16s, incluindo a promoção automática, sem uma segunda suíte na main.
+
+São amostras de mudanças diferentes, medidas entre criação e conclusão dos runs,
+com caches e cargas de runners potencialmente distintos. Registram o resultado
+observado da migração, sem estabelecer um ganho de desempenho garantido.
