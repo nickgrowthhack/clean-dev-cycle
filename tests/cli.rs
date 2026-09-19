@@ -9,6 +9,7 @@ fn help_and_version_work_outside_a_repository() {
         vec!["submit", "--help"],
         vec!["changelog", "--help"],
         vec!["check-commit", "--help"],
+        vec!["release", "--help"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clean-dev-cycle"))
             .args(args)
@@ -30,6 +31,9 @@ fn unknown_interfaces_and_ambiguous_arguments_fail_before_execution() {
         vec!["commit", "--yes", "--yes"],
         vec!["commit", "--timeout", "0"],
         vec!["submit", "--revision"],
+        vec!["release", "check"],
+        vec!["release", "unknown", "--revision", "HEAD"],
+        vec!["commit", "--message"],
         vec!["submit", "--revision", "a", "--revision", "b"],
         vec![
             "check-commit",

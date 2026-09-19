@@ -49,6 +49,7 @@ pub fn run(reference: &OsStr) -> Result<()> {
     }
     message::validate(&revision.description)?;
     check_commit::validate_range(&repo.git, &main.id, &revision.id)?;
+    crate::release::check(&repo.git, &revision.id)?;
     if repo
         .git
         .read(&["diff", "--name-only", &main.id, &revision.id, "--"])?

@@ -59,4 +59,33 @@ jobs:
           & $binary --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $binary --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $binary release check --revision $env:GITHUB_SHA
           exit $LASTEXITCODE
+
+  release:
+    name: Release
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: clean-dev-cycle-release
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preparar o toolchain fixado
+        run: rustup show
+      - name: Compilar a CLI do commit aprovado
+        run: cargo build --locked
+      - name: Publicar tag e release do SHA aprovado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./target/debug/clean-dev-cycle release publish --revision "$GITHUB_SHA"

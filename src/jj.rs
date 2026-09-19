@@ -4,6 +4,7 @@ use std::{ffi::OsStr, process::Command, sync::atomic::AtomicBool, time::Duration
 
 pub struct Jujutsu {
     pub git: Repository,
+    workspace: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,7 +31,10 @@ impl Jujutsu {
                 "execute em um workspace Jujutsu colocated (jj git init --colocate).".into(),
             );
         }
-        let repo = Self { git };
+        let repo = Self {
+            git,
+            workspace: None,
+        };
         repo.run(&["root"])?;
         Ok(repo)
     }
@@ -40,9 +44,11 @@ impl Jujutsu {
     }
 
     fn execute<'a>(&self, args: impl IntoIterator<Item = &'a OsStr>) -> Result<String> {
+        let args: Vec<_> = args.into_iter().collect();
+        let isolated = args.contains(&OsStr::new("--no-integrate-operation"));
         let mut command = Command::new("jj");
         command
-            .current_dir(&self.git.root)
+            .current_dir(self.workspace.as_ref().unwrap_or(&self.git.root))
             .args(["--no-pager", "--color=never"])
             .args(args);
         let output = process::capture(
@@ -54,6 +60,13 @@ impl Jujutsu {
         )?;
         if !output.status.success() {
             return Err(format!("Jujutsu: {}", process::diagnostic(&output.stderr)));
+        }
+        if isolated {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let operation = stderr.lines().find_map(|line| line.strip_prefix("Operation left uncommitted because --no-integrate-operation was requested: "))
+                .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_hexdigit()))
+                .ok_or_else(|| format!("jj 0.45.1 não retornou a operação isolada: {stderr}"))?;
+            return Ok(operation.into());
         }
         String::from_utf8(output.stdout).map_err(|_| "saída do jj não está em UTF-8.".into())
     }
@@ -210,6 +223,113 @@ impl Jujutsu {
             "--message",
             message,
         ])?;
+        self.run(&["status"])?;
+        Ok(())
+    }
+
+    pub fn finish_release(
+        &self,
+        snapshot: &Snapshot,
+        message: &str,
+        tree: &str,
+        cancelled: &AtomicBool,
+    ) -> Result<()> {
+        self.ensure_configured_identity()?;
+        self.ensure_unchanged(snapshot)?;
+        let directory = tempfile::Builder::new()
+            .prefix("cdc-release-")
+            .tempdir()
+            .map_err(|e| e.to_string())?;
+        let name = directory
+            .path()
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("nome temporário inválido.")?;
+        let root = directory.path().join("workspace");
+        self.run(&[
+            "--at-operation",
+            &snapshot.operation,
+            "workspace",
+            "add",
+            "--name",
+            name,
+            "--revision",
+            &snapshot.revision.id,
+            root.to_str().ok_or("caminho temporário inválido.")?,
+        ])?;
+        let isolated = Self {
+            git: Repository {
+                root: self.git.root.clone(),
+            },
+            workspace: Some(root.clone()),
+        };
+        let stage = (|| {
+            for path in crate::release::FILES {
+                let content = crate::release::file(&self.git, tree, path)?
+                    .ok_or("arquivo preparado ausente.")?;
+                std::fs::write(root.join(path), content).map_err(|e| e.to_string())?;
+            }
+            isolated
+                .snapshot()
+                .map_err(|e| format!("workspace temporário: {e}"))
+        })();
+        // Forget the temporary workspace on every path. The user's workspace is never edited here.
+        let cleanup = self.run(&["--ignore-working-copy", "workspace", "forget", name]);
+        let stage = stage?;
+        cleanup?;
+        let expected = self
+            .snapshot()
+            .map_err(|e| format!("workspace original antes da integração: {e}"))?;
+        if expected.revision != snapshot.revision {
+            return Err(
+                "a mudança mudou durante a preparação isolada. Revise e execute novamente.".into(),
+            );
+        }
+        let squashed = self.run(&[
+            "--at-operation",
+            &expected.operation,
+            "--no-integrate-operation",
+            "squash",
+            "--from",
+            &stage.revision.id,
+            "--into",
+            &snapshot.revision.id,
+            "--message",
+            message,
+        ])?;
+        let finished = self.run(&[
+            "--at-operation",
+            squashed.trim(),
+            "--no-integrate-operation",
+            "commit",
+            "--message",
+            message,
+        ])?;
+        let finished = finished.trim();
+        let revision = self.revision(OsStr::new("@-"), Some(finished))?;
+        if self
+            .git
+            .read(&["rev-parse", &format!("{}^{{tree}}", revision.id)])?
+            != format!("{tree}\n").as_bytes()
+        {
+            return Err(
+                "a operação isolada diverge dos arquivos revisados; nada foi integrado.".into(),
+            );
+        }
+        crate::release::check(&self.git, &revision.id)?;
+        self.ensure_unchanged(&expected)?;
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err("operação cancelada.".into());
+        }
+        // Integrate the already completed transaction. Late edits stay in the next change.
+        self.run(&[
+            "--at-operation",
+            &expected.operation,
+            "op",
+            "integrate",
+            finished,
+        ])?;
+        self.run(&["workspace", "update-stale"])?;
         self.run(&["status"])?;
         Ok(())
     }

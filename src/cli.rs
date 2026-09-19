@@ -8,6 +8,7 @@ Comandos:
   submit          Verificar e publicar uma mudança diretamente na main.
   check-commit    Validar mensagens de commit sem IA.
   changelog       Sintetizar um intervalo em Markdown, sem alterar arquivos.
+  release         Verificar ou publicar uma release preparada.
 
 Opções:
   -h, --help      Exibir ajuda.
@@ -19,11 +20,14 @@ const COMMIT_HELP: &str = "Uso: clean-dev-cycle commit [OPÇÕES]
 
 Gera e revisa a descrição de @ no Jujutsu. Confirmar conclui a mudança
 e abre a próxima, como jj commit. Use jj split para separar alterações.
-A geração considera apenas o diff da mudança atual.
+A descrição considera o diff da mudança atual. Com releases ativadas,
+também prepara versão e notas do intervalo acumulado antes de concluir.
 
 Opções:
-  --dry-run              Exibir a proposta sem descrever ou concluir @ (usa IA).
+  --dry-run              Exibir mensagem, versão e notas sem concluir @.
   --yes                  Confirmar sem interação.
+  --message MENSAGEM     Usar mensagem manual, sem gerar a descrição com IA.
+  --entry-file CAMINHO   Usar notas revisadas da release, sem IA.
   --context-file CAMINHO Contexto UTF-8, até 16 KiB.
   --model MODELO         Modelo do Codex.
   --codex CAMINHO        Executável do Codex.
@@ -31,7 +35,7 @@ Opções:
   -h, --help             Exibir ajuda.
 
 Requer jj 0.45.1 no PATH e workspace Git colocated. A leitura do jj pode
-salvar snapshots locais. O caminho sem IA é jj commit -m MENSAGEM.
+salvar snapshots locais. --message com --entry-file dispensa a IA.
 ";
 const SUBMIT_HELP: &str = "Uso: clean-dev-cycle submit [--revision REV]
 
@@ -65,6 +69,11 @@ Opções:
   -h, --help             Exibir ajuda.
 ";
 
+pub struct CommitOptions {
+    pub generation: Options,
+    pub message: Option<String>,
+    pub entry_file: Option<PathBuf>,
+}
 pub struct Options {
     pub dry_run: bool,
     pub yes: bool,
@@ -89,10 +98,11 @@ pub struct ChangelogOptions {
 pub enum Action {
     Help(&'static str),
     Version,
-    Commit(Options),
+    Commit(CommitOptions),
     Submit(OsString),
     CheckCommit(CheckCommitOptions),
     Changelog(ChangelogOptions),
+    Release { publish: bool, revision: OsString },
 }
 
 pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
@@ -100,6 +110,24 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
         return Ok(Action::Help(HELP));
     }
     let command = arguments.remove(0);
+    if command == "release" {
+        const HELP: &str = "Uso: clean-dev-cycle release <check|publish> --revision SHA\n\ncheck verifica versão, notas e conteúdo sem IA ou alterações no workspace.\npublish é executado no GitHub Actions após todos os checks, sobre o SHA aprovado.\nRepetir a publicação retoma uma release incompleta sem substituir tags.\n";
+        if arguments.iter().any(|a| a == "--help" || a == "-h") {
+            return Ok(Action::Help(HELP));
+        }
+        if arguments.len() != 3 || arguments[1] != "--revision" || arguments[2].is_empty() {
+            return Err(HELP.into());
+        }
+        let publish = match arguments[0].to_str() {
+            Some("check") => false,
+            Some("publish") => true,
+            _ => return Err(HELP.into()),
+        };
+        return Ok(Action::Release {
+            publish,
+            revision: arguments.remove(2),
+        });
+    }
     if arguments.is_empty() {
         match command.to_str() {
             Some("-h" | "--help") => return Ok(Action::Help(HELP)),
@@ -131,6 +159,7 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
         timeout: Duration::from_secs(120),
     };
     let (mut from, mut to, mut file, mut entry_file, mut revision) = (None, None, None, None, None);
+    let mut manual_message = None;
     let mut seen = HashSet::new();
     let mut args = arguments.into_iter();
     while let Some(option) = args.next() {
@@ -141,7 +170,14 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
         let allowed = match command.to_str().unwrap() {
             "commit" => matches!(
                 name,
-                "--dry-run" | "--yes" | "--context-file" | "--model" | "--codex" | "--timeout"
+                "--dry-run"
+                    | "--yes"
+                    | "--context-file"
+                    | "--model"
+                    | "--codex"
+                    | "--timeout"
+                    | "--message"
+                    | "--entry-file"
             ),
             "submit" => name == "--revision",
             "check-commit" => matches!(name, "--from" | "--to" | "--message-file"),
@@ -176,6 +212,13 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
             .filter(|v| !v.is_empty() && !v.to_string_lossy().starts_with('-'))
             .ok_or_else(|| format!("informe um valor para {name}."))?;
         match name {
+            "--message" => {
+                manual_message = Some(
+                    value
+                        .into_string()
+                        .map_err(|_| "a mensagem deve estar em UTF-8.")?,
+                )
+            }
             "--from" => from = Some(value),
             "--to" => to = Some(value),
             "--message-file" => file = Some(PathBuf::from(value)),
@@ -196,7 +239,11 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
         }
     }
     match command.to_str().unwrap() {
-        "commit" => Ok(Action::Commit(generation)),
+        "commit" => Ok(Action::Commit(CommitOptions {
+            generation,
+            message: manual_message,
+            entry_file,
+        })),
         "submit" => Ok(Action::Submit(revision.unwrap_or_else(|| "@-".into()))),
         "check-commit" => {
             let input = match (file, from, to) {

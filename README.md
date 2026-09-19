@@ -4,7 +4,7 @@ Uma CLI para concluir mudanças pequenas, verificá-las e publicá-las na main.
 Jujutsu organiza o trabalho local. A única branch é `main`.
 
 ```text
-mudança no jj → commit → submit → checks locais → push na main → CI
+mudança no jj → commit com versão e notas → submit → checks locais → main → CI → release
 ```
 
 Uma mudança deve resolver uma parte compreensível do problema e manter o projeto
@@ -17,6 +17,8 @@ Instale Git, [Jujutsu 0.45.1](https://github.com/jj-vcs/jj/releases/tag/v0.45.1)
 e o toolchain Rust 1.98.1 indicado em `rust-toolchain.toml`.
 Os executáveis devem estar no PATH. Codex CLI autenticado é necessário apenas
 para gerar mensagens ou notas com IA.
+Para preparar releases, instale também a [GitHub CLI](https://cli.github.com/) e
+autentique com `gh auth login`. O remoto `origin` deve apontar para o GitHub.
 
 ```sh
 cargo install --path . --locked
@@ -52,7 +54,10 @@ clean-dev-cycle submit
 
 `commit` revisa o diff de `@`. Enter confirma, `e` permite editar e `n` cancela.
 Na edição, termine com uma linha contendo apenas `.` e confirme a nova mensagem.
-Confirmar descreve a mudança e abre a próxima, como `jj commit`.
+Com releases ativadas, a CLI calcula a versão e propõe as notas após a revisão da
+mensagem. Você pode revisar e editar as notas antes de confirmar a entrega.
+Confirmar inclui os arquivos da release, descreve a mudança e abre a próxima,
+como `jj commit`. Cancelar qualquer etapa mantém a mudança em edição.
 O comando preserva o conteúdo revisado. Se o workspace mudar durante a geração,
 ele recusa a confirmação. Edições posteriores ao snapshot final ficam na próxima
 mudança, sem entrar silenciosamente no commit revisado.
@@ -60,11 +65,12 @@ mudança, sem entrar silenciosamente no commit revisado.
 Para escrever a mensagem sem IA:
 
 ```sh
-jj commit -m "fix: corrigir a leitura do arquivo"
+clean-dev-cycle commit --message "fix: corrigir a leitura do arquivo" --entry-file nota.md
 clean-dev-cycle submit
 ```
 
-`submit` atualiza `origin`, valida a mudança concluída em `@-` e executa os checks
+`submit` atualiza `origin`, valida a mudança concluída e sua preparação de release
+em `@-` e executa os checks
 configurados no próprio commit, em uma cópia temporária. Se todos passarem,
 publica exatamente esse SHA diretamente na `main`. O CI verifica Linux e Windows
 após o push. Você pode continuar editando a próxima mudança durante os checks.
@@ -144,8 +150,8 @@ Git e exigem histórico completo. Códigos de saída: `0` sucesso, `1` falha e `
 
 ## Comunicar uma entrega
 
-O changelog é opcional e independente da integração. Escolha o intervalo Git
-que representa o resultado a comunicar:
+O comando avulso `changelog` é independente da preparação de releases. Escolha
+o intervalo Git que representa o resultado a comunicar:
 
 ```sh
 clean-dev-cycle changelog --from origin/main~1 --to origin/main
@@ -156,6 +162,73 @@ O primeiro comando sintetiza o diff acumulado com IA. O segundo valida uma nota
 manual com título `###`, linha em branco e síntese, aceitando também entregas
 com binários ou diffs grandes. Ambos emitem somente Markdown em stdout.
 `--from` deve ser ancestral de `--to`.
+
+## Automatizar versões e releases
+
+Ative por projeto em `clean-dev-cycle.toml`:
+
+```toml
+[release]
+enabled = true
+```
+
+O suporte inicial é um pacote Rust na raiz, com `Cargo.toml` e `Cargo.lock`
+versionados, versões estáveis a partir de `0.1.0` e `origin` no github.com.
+Workspaces Cargo, prereleases, binários, publicação em crates.io e deploy ficam
+fora deste fluxo. Projetos sem a configuração continuam com o comportamento anterior.
+
+`commit` reserva a versão no próprio commit. `feat` incrementa minor, `fix` e
+`perf` incrementam patch. Uma quebra (`!` ou `BREAKING CHANGE`) incrementa minor
+em `0.x` e major a partir de `1.0`. Os demais tipos não iniciam releases, salvo
+quebra explícita. A IA redige as notas, mas não escolhe a versão.
+
+A primeira preparação usa a versão atual do pacote. As seguintes partem da
+versão no pai da mudança, inclusive em stacks ainda não publicados. Reabrir a
+mesma mudança não incrementa novamente. É possível continuar trabalhando
+durante o CI. Uma versão cujo CI falhou pode nunca ganhar tag, deixando uma lacuna.
+
+As notas sintetizam o diff acumulado desde a última release publicada ancestral,
+consultada pelo `gh` durante a preparação. O intervalo fica fixado nos metadados.
+Notas de versões preparadas enquanto outra release está pendente podem incluir
+mudanças em comum. O changelog registra preparações, enquanto as
+[GitHub Releases](https://github.com/nickgrowthhack/clean-dev-cycle/releases)
+confirmam o que foi publicado. O histórico anterior à primeira release é preservado.
+
+Mensagem, versão, notas e conteúdo revisado são vinculados pelo manifesto
+`.clean-dev-cycle-release.json`. A preparação usa um índice Git e operações
+Jujutsu isolados, integrados somente após a confirmação. `commit --dry-run`
+mostra a proposta completa sem alterar os arquivos ou concluir a mudança.
+`--yes` confirma mensagem e notas sem interação.
+
+Para notas manuais, use título `###`, linha em branco e síntese. `--entry-file`
+aceita entregas com binários ou diffs que excedem 128 KiB. Combine com
+`--message` para dispensar completamente a IA. Nenhum diff é truncado.
+
+Rebase ou edição posterior pode invalidar a preparação. Reabra a mudança com
+`jj edit ID` e execute `clean-dev-cycle commit` novamente. Um `jj commit` direto
+continua possível para mudanças internas. Uma mudança elegível sem preparação
+é recusada pelo `submit` e pelo CI.
+
+```sh
+clean-dev-cycle release check --revision SHA
+```
+
+Essa verificação é determinística, sem IA ou consultas ao GitHub. O workflow
+executa o comando no SHA do evento em Linux e Windows. Após os dois passarem,
+o job `Release` executa `release publish --revision SHA` com `GITHUB_TOKEN`
+e permissão `contents: write`, criando `vVERSÃO` e as mesmas notas no GitHub.
+O runner não precisa de autenticação da IA. Nenhum commit adicional é criado.
+
+Repositórios consumidores devem instalar a CLI e adotar a mesma dependência
+entre jobs: publicação somente após todos os checks, checkout do SHA do evento,
+histórico completo e fila de publicação com `queue: max`, sem cancelamento.
+O comando de publicação exige o contexto do GitHub Actions na main.
+
+Se a publicação falhar, reexecute o job `Release` da execução original. Uma tag
+já criada no SHA esperado é reutilizada, e uma release correspondente não é
+duplicada. Tag em outro SHA ou notas divergentes causam erro sem sobrescrita.
+Publicações atrasadas não substituem uma versão maior como `Latest`.
+Se o CI falhar, corrija em uma nova mudança. Nunca mova uma tag já publicada.
 
 ## Desenvolvimento
 
@@ -176,4 +249,4 @@ A execução manual valida a mensagem do commit selecionado contra seu pai.
 O histórico é linear, com force-push e exclusão da main bloqueados, inclusive
 para administradores. O CI não é um requisito prévio para aceitar o push.
 
-A CLI não automatiza versão, tags, releases ou deploy.
+A CLI automatiza versão, changelog, tags e GitHub Releases. Deploy é independente.

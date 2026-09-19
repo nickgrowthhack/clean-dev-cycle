@@ -11,9 +11,13 @@ publish = false
 [dependencies]
 ctrlc = "3.5"
 git-conventional = "1.1.0"
+next_version = "0.3.2"
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.23"
 toml = "1.1"
+toml_edit = "0.25.15"
 
 [lints.rust]
 unsafe_code = "forbid"

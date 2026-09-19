@@ -1,4 +1,4 @@
-use crate::{Result, cli::Options, jj::Jujutsu, message, provider};
+use crate::{Result, cli::CommitOptions, jj::Jujutsu, message, provider, release};
 use std::{
     io::{self, BufRead, IsTerminal, Write},
     sync::{
@@ -7,16 +7,16 @@ use std::{
     },
 };
 
-pub fn run(options: Options) -> Result<()> {
+pub fn run(options: CommitOptions) -> Result<()> {
     let repository = Jujutsu::discover()?;
-    if !options.dry_run && !options.yes && !io::stdin().is_terminal() {
+    let generation = &options.generation;
+    if !generation.dry_run && !generation.yes && !io::stdin().is_terminal() {
         return Err("a confirmação exige um terminal. Use --dry-run ou --yes.".into());
     }
     repository.ensure_configured_identity()?;
     let snapshot = repository.snapshot()?;
     repository.ensure_author(&snapshot.revision)?;
-    let diff = repository.diff(&snapshot.revision)?;
-    let context = options
+    let context = generation
         .context_file
         .as_ref()
         .map(|p| provider::read_text(p, 16 * 1024))
@@ -25,17 +25,33 @@ pub fn run(options: Options) -> Result<()> {
     let cancelled = Arc::new(AtomicBool::new(false));
     let signal = Arc::clone(&cancelled);
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed)).map_err(|e| e.to_string())?;
-    eprintln!(
-        "Gerando descrição da mudança {} com Codex...",
-        snapshot.revision.change
-    );
-    let generated = provider::generate(&options, &diff, &context, &cancelled)?;
+    let generated = if let Some(manual) = &options.message {
+        message::validate(manual)?
+    } else {
+        eprintln!(
+            "Gerando descrição da mudança {} com Codex...",
+            snapshot.revision.change
+        );
+        let diff = repository.diff(&snapshot.revision)?;
+        provider::generate(generation, &diff, &context, &cancelled)?
+    };
+    if snapshot.revision.parents.len() != 1
+        || repository
+            .git
+            .read(&[
+                "diff",
+                "--name-only",
+                &snapshot.revision.parents[0],
+                &snapshot.revision.id,
+                "--",
+            ])?
+            .is_empty()
+    {
+        return Err("não há alterações em uma mudança linear para concluir.".into());
+    }
     repository.ensure_unchanged(&snapshot)?;
     println!("\nMensagem proposta:\n\n{generated}\n");
-    if options.dry_run {
-        return Ok(());
-    }
-    let reviewed = if options.yes {
+    let reviewed = if generation.yes || generation.dry_run {
         Some(generated)
     } else {
         review(
@@ -53,7 +69,49 @@ pub fn run(options: Options) -> Result<()> {
     if cancelled.load(Ordering::Relaxed) {
         return Err("operação cancelada.".into());
     }
-    repository.finish(&snapshot, &message::validate(&reviewed)?)?;
+    let reviewed = message::validate(&reviewed)?;
+    let prepared = release::prepare(
+        &repository.git,
+        &snapshot.revision.id,
+        &reviewed,
+        &options,
+        &cancelled,
+    )?;
+    repository.ensure_unchanged(&snapshot)?;
+    if let Some(mut prepared) = prepared {
+        println!(
+            "\nVersão proposta: {}\n\n{}\n",
+            prepared.version, prepared.notes
+        );
+        if generation.dry_run {
+            return Ok(());
+        }
+        if !generation.yes {
+            let notes = review(
+                prepared.notes.clone(),
+                &mut io::stdin().lock(),
+                &mut io::stdout().lock(),
+                &cancelled,
+                crate::changelog::validate,
+            )?;
+            let Some(notes) = notes else {
+                println!("Commit cancelado.");
+                return Ok(());
+            };
+            if notes != prepared.notes {
+                release::revise_notes(&repository.git, &mut prepared, &notes)?;
+            }
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            return Err("operação cancelada.".into());
+        }
+        repository.finish_release(&snapshot, &reviewed, &prepared.tree, &cancelled)?;
+    } else {
+        if generation.dry_run {
+            return Ok(());
+        }
+        repository.finish(&snapshot, &reviewed)?;
+    }
     println!("Mudança concluída. A próxima mudança está aberta em @. Use submit para enviar.");
     Ok(())
 }

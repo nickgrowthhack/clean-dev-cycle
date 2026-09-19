@@ -1,3 +1,6 @@
+[release]
+enabled = true
+
 [checks]
 commands = [
     ["cargo", "fmt", "--all", "--", "--check"],

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "parent": "73c346d60061c8fb50eefc04fdc45df5a4b4964f",
+  "base": null,
+  "base_tag": null,
+  "fingerprint": "ff8f0c5f1a6c046681c9f030bd6c7680df4486d0",
+  "message": "feat: automatizar versões, changelog e releases no fluxo com Jujutsu",
+  "notes_hash": "9a90a76ab326521bac855bdb41e9cab0671d18a3"
+}

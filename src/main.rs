@@ -5,10 +5,12 @@ mod cli;
 mod commit;
 mod executable;
 mod git;
+mod github;
 mod jj;
 mod message;
 mod process;
 mod provider;
+mod release;
 mod submit;
 
 use std::process::ExitCode;
@@ -30,6 +32,7 @@ fn main() -> ExitCode {
         Ok(cli::Action::CheckCommit(options)) => finish(check_commit::run(options)),
         Ok(cli::Action::Submit(revision)) => finish(submit::run(&revision)),
         Ok(cli::Action::Changelog(options)) => finish(changelog::run(options)),
+        Ok(cli::Action::Release { publish, revision }) => finish(release::run(&revision, publish)),
         Err(error) => {
             eprintln!("Erro: {error}\nUse clean-dev-cycle --help para consultar o uso.");
             ExitCode::from(2)

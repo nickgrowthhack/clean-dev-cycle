@@ -8,7 +8,7 @@ de trabalho. O Git fornece armazenamento e transporte para GitHub.
 
 1. Edite a mudança atual (`@`) e confira `jj diff`.
 2. Separe resultados independentes com `jj split`.
-3. Conclua com `clean-dev-cycle commit` ou `jj commit -m MENSAGEM`.
+3. Conclua com `clean-dev-cycle commit`, revisando mensagem, versão e notas.
 4. Execute `clean-dev-cycle submit`. O padrão é a mudança concluída em `@-`.
 5. O submit verifica o commit e publica diretamente na main. Acompanhe o CI.
 
@@ -31,7 +31,9 @@ Os checks locais são uma regra do submit e não substituem uma proteção no se
 contra envios manuais.
 
 Force-push, exclusão da main e histórico não linear são bloqueados,
-inclusive para administradores. Changelog, release e deploy não bloqueiam o envio.
+inclusive para administradores. Com releases ativadas, uma mudança elegível
+precisa incluir versão e changelog válidos. A publicação da tag e da release
+acontece depois do CI. Deploy permanece independente.
 
 ## Quando algo falha
 
@@ -42,6 +44,8 @@ inclusive para administradores. Changelog, release e deploy não bloqueiam o env
   conflitos, revise e reenvie. O novo SHA precisa de novos checks.
 - Mudança reescrita durante os checks: revise a nova versão e execute submit
   novamente. O resultado anterior não é reaproveitado.
+- Preparação de release desatualizada após edição ou rebase: reabra com `jj edit`
+  e conclua novamente pela CLI. O submit não reescreve a mudança para corrigir notas.
 - Mudança já integrada: `submit` informa isso e não repete checks nem push.
 - CI falhou ou houve regressão publicada: prepare uma correção ou reversão como
   nova mudança e envie pelo mesmo fluxo. Não reescreva a main.
