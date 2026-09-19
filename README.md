@@ -1,7 +1,7 @@
 # clean-dev-cycle
 
 Uma CLI para concluir mudanças pequenas, verificá-las e publicá-las na main.
-Jujutsu organiza o trabalho local. A única branch é `main`, sem PR ou promoção.
+Jujutsu organiza o trabalho local. A única branch é `main`.
 
 ```text
 mudança no jj → commit → submit → checks locais → push na main → CI
@@ -125,7 +125,6 @@ Comandos de leitura do Jujutsu podem salvar snapshots locais.
 O diff enviado à IA deve ser textual, UTF-8 e ter até 128 KiB. Binários,
 submódulos, nomes potencialmente sensíveis e diffs maiores são recusados.
 Nenhuma parte é truncada. Para esses casos, revise o conteúdo e use `jj commit`.
-O stage e os hooks do Git não participam do fluxo Jujutsu.
 
 A integração com Codex mantém modelo e esforço de raciocínio da configuração
 pessoal. A geração ocorre em diretório temporário, com ferramentas desativadas.
@@ -138,7 +137,7 @@ clean-dev-cycle check-commit --message-file mensagem.txt
 clean-dev-cycle check-commit --from origin/main~1 --to origin/main
 ```
 
-O perfil continua sendo Conventional Commits, com título de até 100 caracteres
+O perfil é Conventional Commits, com título de até 100 caracteres
 Unicode e mensagem de até 16 KiB. Corpo longo, maiúsculas e ponto final são
 permitidos. O modo arquivo funciona sem repositório. Intervalos usam referências
 Git e exigem histórico completo. Códigos de saída: `0` sucesso, `1` falha e `2` uso inválido.
@@ -156,9 +155,7 @@ clean-dev-cycle changelog --from origin/main~1 --to origin/main --entry-file not
 O primeiro comando sintetiza o diff acumulado com IA. O segundo valida uma nota
 manual com título `###`, linha em branco e síntese, aceitando também entregas
 com binários ou diffs grandes. Ambos emitem somente Markdown em stdout.
-Não escrevem em `CHANGELOG.md`. As notas históricas permanecem preservadas.
-`--from` deve ser ancestral de `--to`. Não há número de PR, fingerprint ou
-nota obrigatória para liberar uma integração.
+`--from` deve ser ancestral de `--to`.
 
 ## Desenvolvimento
 
@@ -179,5 +176,4 @@ A execução manual valida a mensagem do commit selecionado contra seu pai.
 O histórico é linear, com force-push e exclusão da main bloqueados, inclusive
 para administradores. O CI não é um requisito prévio para aceitar o push.
 
-Versão, tag, release e deploy continuam fora desta integração. O
-[plano inicial](docs/plans/initial-cycle.md) foi encerrado como orientação operacional.
+A CLI não automatiza versão, tags, releases ou deploy.

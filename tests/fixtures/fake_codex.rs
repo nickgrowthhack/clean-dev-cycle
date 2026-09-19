@@ -22,9 +22,6 @@ fn main() {
     if mode == "mutate" {
         fs::write(repo.join("outra.txt"), "alteração concorrente").unwrap();
     }
-    if mode == "mutate-changelog" {
-        fs::write(repo.join("CHANGELOG.md"), "alteração manual concorrente\n").unwrap();
-    }
     if mode == "mutate-base" {
         assert!(Command::new("git").current_dir(&repo).args(["update-ref", "refs/heads/main", "HEAD"]).status().unwrap().success());
     }

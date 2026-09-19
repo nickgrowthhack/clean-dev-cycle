@@ -103,7 +103,10 @@ impl Repo {
         repo.git(&["config", "user.name", "Teste"]);
         repo.git(&["config", "user.email", "teste@example.com"]);
         repo.git(&["config", "core.autocrlf", "false"]);
-        repo.write("CHANGELOG.md", "# Changelog\n\nHistórico preservado.\n");
+        repo.write(
+            "CHANGELOG.md",
+            "# Changelog\n\n### Exemplo\n\nSíntese da entrega.\n",
+        );
         repo.git(&["add", "CHANGELOG.md"]);
         repo.git(&["commit", "-m", "docs: base"]);
         repo.base = repo.git(&["rev-parse", "HEAD"]).trim().into();

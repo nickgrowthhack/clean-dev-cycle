@@ -1,5 +1,6 @@
 param([Parameter(Mandatory)][string]$Binary)
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Execute o CI na main.' }
 $head = $env:GITHUB_SHA
 if ($head -notmatch '^[0-9a-f]{40}$') { throw 'SHA do evento inválido.' }

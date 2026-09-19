@@ -19,7 +19,7 @@ const COMMIT_HELP: &str = "Uso: clean-dev-cycle commit [OPÇÕES]
 
 Gera e revisa a descrição de @ no Jujutsu. Confirmar conclui a mudança
 e abre a próxima, como jj commit. Use jj split para separar alterações.
-Não usa o stage, não executa hooks Git e não envia commits ao remoto.
+A geração considera apenas o diff da mudança atual.
 
 Opções:
   --dry-run              Exibir a proposta sem descrever ou concluir @ (usa IA).
@@ -53,7 +53,7 @@ Saída: 0 para sucesso, 1 para falha, 2 para uso inválido.
 const CHANGELOG_HELP: &str = "Uso: clean-dev-cycle changelog --from REF --to REF [OPÇÕES]
 
 Sintetiza o diff completo entre duas referências Git (FROM ancestral de TO).
-Emite somente Markdown em stdout. Não escreve CHANGELOG.md nem exige PR.
+Emite somente Markdown em stdout, sem alterar arquivos.
 Use SHAs Git de mudanças jj concluídas. O intervalo exige histórico completo.
 
 Opções:

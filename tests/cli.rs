@@ -22,19 +22,11 @@ fn help_and_version_work_outside_a_repository() {
 }
 
 #[test]
-fn removed_interfaces_and_ambiguous_arguments_fail_before_execution() {
+fn unknown_interfaces_and_ambiguous_arguments_fail_before_execution() {
     for args in [
-        vec![
-            "check-ci",
-            "--event-name",
-            "pull_request",
-            "--event-file",
-            "event.json",
-        ],
-        vec!["__verify-commit"],
-        vec!["changelog", "--base", "main", "--pr", "42"],
+        vec!["unknown-command"],
         vec!["changelog", "--from", "main"],
-        vec!["changelog", "--from", "a", "--to", "b", "--check"],
+        vec!["changelog", "--from", "a", "--to", "b", "--unknown-option"],
         vec!["commit", "--yes", "--yes"],
         vec!["commit", "--timeout", "0"],
         vec!["submit", "--revision"],
