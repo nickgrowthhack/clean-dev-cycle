@@ -9,7 +9,7 @@ mudança no jj → commit com versão e notas → submit → checks locais → m
 
 Uma mudança deve resolver uma parte compreensível do problema e manter o projeto
 funcionando. Não é necessário terminar uma funcionalidade inteira para integrar.
-O [guia do fluxo](docs/branching.md) explica stacks, falhas e recuperação.
+O [guia do fluxo](docs/CYCLE.md) explica stacks, falhas e recuperação.
 
 ## Preparar o ambiente
 
@@ -175,7 +175,8 @@ enabled = true
 O suporte inicial é um pacote Rust na raiz, com `Cargo.toml` e `Cargo.lock`
 versionados, versões estáveis a partir de `0.1.0` e `origin` no github.com.
 Workspaces Cargo, prereleases, binários, publicação em crates.io e deploy ficam
-fora deste fluxo. Projetos sem a configuração continuam com o comportamento anterior.
+fora deste fluxo. Sem `[release]`, `commit` conclui a mudança apenas com a
+mensagem, e `submit` e o CI não exigem preparação de release.
 
 `commit` reserva a versão no próprio commit. `feat` incrementa minor, `fix` e
 `perf` incrementam patch. Uma quebra (`!` ou `BREAKING CHANGE`) incrementa minor
@@ -192,7 +193,8 @@ consultada pelo `gh` durante a preparação. O intervalo fica fixado nos metadad
 Notas de versões preparadas enquanto outra release está pendente podem incluir
 mudanças em comum. O changelog registra preparações, enquanto as
 [GitHub Releases](https://github.com/nickgrowthhack/clean-dev-cycle/releases)
-confirmam o que foi publicado. O histórico anterior à primeira release é preservado.
+confirmam o que foi publicado. Texto do `CHANGELOG.md` fora dos marcadores de
+release é mantido após as entradas.
 
 Mensagem, versão, notas e conteúdo revisado são vinculados pelo manifesto
 `.clean-dev-cycle-release.json`. A preparação usa um índice Git e operações
