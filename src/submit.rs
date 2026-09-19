@@ -1,14 +1,24 @@
-use crate::{Result, check_commit, jj::Jujutsu, message};
-use std::ffi::OsStr;
+use crate::{Result, check_commit, checks, jj::Jujutsu, message};
+use std::{
+    ffi::OsStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-const BOOKMARK: &str = "nick/submit";
+const BOOKMARK: &str = "main";
 
 pub fn run(reference: &OsStr) -> Result<()> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let signal = Arc::clone(&cancelled);
+    ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed)).map_err(|e| e.to_string())?;
     let repo = Jujutsu::discover()?;
     repo.run(&["status"])?;
     // Resolve once before fetch: never silently select another change when refs move.
     let revision = repo.revision(reference, None)?;
     repo.run(&["git", "fetch", "--remote", "origin"])?;
+    repo.run(&["bookmark", "track", "main@origin"])?;
     let main = repo.revision(OsStr::new("main@origin"), None)?;
     let common = repo.git.read(&["merge-base", &revision.id, &main.id])?;
     if common == format!("{}\n", revision.id).as_bytes() {
@@ -46,18 +56,19 @@ pub fn run(reference: &OsStr) -> Result<()> {
     {
         return Err("não há alterações de arquivos para enviar.".into());
     }
+    checks::run(&repo.git, &revision.id, &cancelled)?;
+    repo.run(&["git", "fetch", "--remote", "origin"])?;
+    if repo.revision(OsStr::new("main@origin"), None)?.id != main.id {
+        return Err("a main avançou durante os checks. Atualize a base, revise e reenvie.".into());
+    }
     let current = repo.revision(OsStr::new(&revision.change), None)?;
     if current != revision {
         return Err("a mudança foi reescrita durante o envio. Revise e reenvie.".into());
     }
-    repo.run(&[
-        "bookmark",
-        "set",
-        BOOKMARK,
-        "--revision",
-        &revision.id,
-        "--allow-backwards",
-    ])?;
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("operação cancelada.".into());
+    }
+    repo.run(&["bookmark", "set", BOOKMARK, "--revision", &revision.id])?;
     let operation = repo.run(&[
         "--ignore-working-copy",
         "op",
@@ -68,8 +79,14 @@ pub fn run(reference: &OsStr) -> Result<()> {
         "-T",
         "id",
     ])?;
-    if repo.revision(OsStr::new(BOOKMARK), Some(&operation))? != revision {
-        return Err("o bookmark de envio mudou. Revise e reenvie.".into());
+    if repo.revision(OsStr::new(BOOKMARK), Some(&operation))? != revision
+        || repo
+            .revision(OsStr::new("main@origin"), Some(&operation))?
+            .id
+            != main.id
+        || cancelled.load(Ordering::Relaxed)
+    {
+        return Err("o envio foi cancelado ou as referências mudaram. Revise e reenvie.".into());
     }
     repo.run(&[
         "--at-operation",
@@ -82,7 +99,7 @@ pub fn run(reference: &OsStr) -> Result<()> {
         BOOKMARK,
     ])?;
     println!(
-        "Enviado {} para {BOOKMARK}. O CI integrará este mesmo SHA após aprovação.",
+        "Publicado {} diretamente na main. Checks locais aprovados. Acompanhe o CI no GitHub.",
         revision.id
     );
     Ok(())

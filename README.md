@@ -1,10 +1,10 @@
 # clean-dev-cycle
 
-Uma CLI para concluir mudanças pequenas e integrá-las automaticamente após o CI.
-Jujutsu organiza o trabalho local. GitHub recebe uma camada por vez, sem PR obrigatório.
+Uma CLI para concluir mudanças pequenas, verificá-las e publicá-las na main.
+Jujutsu organiza o trabalho local. A única branch é `main`, sem PR ou promoção.
 
 ```text
-mudança no jj → commit → submit → CI → main
+mudança no jj → commit → submit → checks locais → push na main → CI
 ```
 
 Uma mudança deve resolver uma parte compreensível do problema e manter o projeto
@@ -64,10 +64,10 @@ jj commit -m "fix: corrigir a leitura do arquivo"
 clean-dev-cycle submit
 ```
 
-`submit` atualiza `origin`, valida a mudança concluída em `@-` e envia somente
-essa camada para o bookmark reutilizável `nick/submit`. O CI testa Linux e Windows
-e promove exatamente o SHA aprovado para `main`. Não é necessário fazer merge.
-Você pode continuar editando a próxima mudança enquanto o CI executa.
+`submit` atualiza `origin`, valida a mudança concluída em `@-` e executa os checks
+configurados no próprio commit, em uma cópia temporária. Se todos passarem,
+publica exatamente esse SHA diretamente na `main`. O CI verifica Linux e Windows
+após o push. Você pode continuar editando a próxima mudança durante os checks.
 
 Para escolher uma camada anterior do stack:
 
@@ -75,10 +75,44 @@ Para escolher uma camada anterior do stack:
 clean-dev-cycle submit --revision ID_DA_MUDANCA
 ```
 
-A camada precisa ser filha direta de `main@origin`. Um envio mais novo substitui
-o candidato anterior, e o workflow cancela a execução anterior ainda em andamento.
-Reenviar um SHA já integrado informa sucesso sem publicar outra mudança.
+A camada precisa ser filha direta de `main@origin`. Se a base avançar ou a mudança
+for reescrita durante os checks, o envio é recusado. Faça rebase, revise e reenvie.
+Reenviar um SHA já integrado informa sucesso sem repetir os checks ou o push.
+Cada push tem sua execução de CI. Uma falha após publicação exige uma correção
+ou reversão como novo commit na main, sem reescrever o histórico.
 Confira a execução na [página de Actions](https://github.com/nickgrowthhack/clean-dev-cycle/actions).
+
+## Configurar os checks locais
+
+Versione `clean-dev-cycle.toml` na raiz do projeto. Neste repositório:
+
+```toml
+[checks]
+commands = [
+    ["cargo", "fmt", "--all", "--", "--check"],
+    ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", "--locked"],
+]
+```
+
+Cada lista contém um programa e seus argumentos, executados em ordem, sem shell
+implícito. Outros projetos podem definir seus próprios comandos. Caminhos como
+`./scripts/check` são relativos à cópia do commit. Para scripts PowerShell, use
+uma lista como `["pwsh", "-NoProfile", "-File", "scripts/check.ps1"]`.
+
+Os programas precisam estar instalados. A cópia contém os arquivos versionados,
+sem dependências ou arquivos ignorados do workspace. Inclua a preparação necessária
+nos comandos. A configuração controla os checks locais, não o workflow do GitHub.
+
+Configuração ausente, inválida ou vazia impede o envio. Cada comando tem limite de
+15 minutos. Erro, cancelamento, ferramenta ausente ou alteração de arquivos
+versionados pelos checks impede o push. Use modos de verificação que não corrijam
+arquivos automaticamente. Não há opção para pular os checks.
+
+A cópia temporária usa HEAD destacado e é removida ao terminar. As edições da
+próxima mudança não participam da verificação. Os checks usam a configuração
+versionada no commit selecionado, mesmo que você já tenha editado a configuração
+em `@`.
 
 ## Opções e limites da geração
 
@@ -140,8 +174,10 @@ Windows usa Rust GNU, com `as`, `dlltool` e as DLLs do Git no PATH.
 `cargo build --release --locked` gera o binário otimizado quando necessário.
 
 O CI executa formatação e Clippy no Linux e testes/execução da CLI nos dois
-sistemas. A promoção exige `Qualidade`, histórico linear e avanço sem reescrita.
-Não há segunda execução da suíte após promover o mesmo SHA.
+sistemas, em cada push na main. Valida as mensagens de todos os commits do evento.
+A execução manual valida a mensagem do commit selecionado contra seu pai.
+O histórico é linear, com force-push e exclusão da main bloqueados, inclusive
+para administradores. O CI não é um requisito prévio para aceitar o push.
 
 Versão, tag, release e deploy continuam fora desta integração. O
 [plano inicial](docs/plans/initial-cycle.md) foi encerrado como orientação operacional.

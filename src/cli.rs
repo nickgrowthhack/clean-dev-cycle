@@ -5,7 +5,7 @@ const HELP: &str = "Uso: clean-dev-cycle <COMANDO> [OPÇÕES]
 
 Comandos:
   commit          Revisar e concluir a mudança atual do Jujutsu (@).
-  submit          Enviar uma mudança para CI e integração automática na main.
+  submit          Verificar e publicar uma mudança diretamente na main.
   check-commit    Validar mensagens de commit sem IA.
   changelog       Sintetizar um intervalo em Markdown, sem alterar arquivos.
 
@@ -35,10 +35,11 @@ salvar snapshots locais. O caminho sem IA é jj commit -m MENSAGEM.
 ";
 const SUBMIT_HELP: &str = "Uso: clean-dev-cycle submit [--revision REV]
 
-Atualiza origin e envia uma mudança concluída (padrão @-) para nick/submit.
+Atualiza origin e publica uma mudança concluída (padrão @-) na main.
 A mudança deve ser filha direta de main@origin, sem conflitos ou merges.
-Camadas anteriores devem ser enviadas primeiro. O CI promove o mesmo SHA
-aprovado à main. Não cria PR, não faz rebase e não envia a próxima camada.
+Executa os checks de clean-dev-cycle.toml do commit em uma cópia temporária,
+com limite de 15 minutos por comando. Falhas impedem o envio. O CI roda após o push.
+Camadas anteriores devem ser enviadas primeiro. Não faz rebase automático.
 Reenviar uma mudança já integrada é uma operação sem efeito.
 ";
 const CHECK_HELP: &str = "Uso: clean-dev-cycle check-commit --message-file CAMINHO

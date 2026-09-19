@@ -1,5 +1,6 @@
 mod changelog;
 mod check_commit;
+mod checks;
 mod cli;
 mod commit;
 mod executable;

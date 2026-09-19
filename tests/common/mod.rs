@@ -51,6 +51,29 @@ pub struct Repo {
     pub root: PathBuf,
     pub base: String,
 }
+
+pub fn fake_checks() -> PathBuf {
+    static DIRECTORY: OnceLock<TempDir> = OnceLock::new();
+    DIRECTORY
+        .get_or_init(|| {
+            let directory = tempfile::tempdir().unwrap();
+            let output = Command::new("rustc")
+                .args(["--edition=2024", "--crate-name", "fake_checks"])
+                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_checks.rs"))
+                .arg("-o")
+                .arg(
+                    directory
+                        .path()
+                        .join(format!("checks{}", std::env::consts::EXE_SUFFIX)),
+                )
+                .output()
+                .unwrap();
+            success(&output);
+            directory
+        })
+        .path()
+        .join(format!("checks{}", std::env::consts::EXE_SUFFIX))
+}
 impl Repo {
     pub fn new() -> Self {
         let directory = tempfile::Builder::new()

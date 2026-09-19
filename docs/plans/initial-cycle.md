@@ -5,7 +5,8 @@ O método vigente está no [fluxo com Jujutsu](../branching.md).
 
 As decisões anteriores de PR obrigatório, changelog por PR, check `Entrega do PR`,
 branches por entrega e rebase de integração foram substituídas por mudanças locais
-do Jujutsu, um envio por vez, CI e promoção do SHA aprovado à main por fast-forward.
+do Jujutsu e um envio por vez. O fluxo atual verifica o commit localmente e o
+publica diretamente na main, com CI após o push e sem branch intermediária.
 Não retome as branches antigas como trabalho pendente.
 
 Foram preservados o perfil simples de mensagens, a alternativa sem IA e o

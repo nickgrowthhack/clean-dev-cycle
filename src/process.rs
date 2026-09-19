@@ -10,6 +10,56 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub fn stream(command: &mut Command, timeout: Duration, cancelled: &AtomicBool) -> Result<()> {
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("operação cancelada.".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| {
+            format!(
+                "não foi possível executar {}: {e}.",
+                command.get_program().to_string_lossy()
+            )
+        })?;
+    let start = Instant::now();
+    loop {
+        let reason = if cancelled.load(Ordering::Relaxed) {
+            Some("operação cancelada.")
+        } else if start.elapsed() >= timeout {
+            Some("tempo limite do check excedido.")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            terminate(&mut child);
+            return Err(reason.into());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "check {} falhou ({status}).",
+                    command.get_program().to_string_lossy()
+                ));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(30)),
+            Err(e) => {
+                terminate(&mut child);
+                return Err(format!("não foi possível acompanhar o check: {e}."));
+            }
+        }
+    }
+}
+
 pub fn capture(
     command: &mut Command,
     input: Vec<u8>,
@@ -148,4 +198,40 @@ pub fn diagnostic(bytes: &[u8]) -> String {
         .collect::<String>()
         .trim()
         .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_timeout_and_cancellation_terminate_the_process() {
+        for cancel in [false, true] {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let signal = Arc::clone(&cancelled);
+            let notifier = thread::spawn(move || {
+                thread::sleep(Duration::from_millis(150));
+                if cancel {
+                    signal.store(true, Ordering::Relaxed);
+                }
+            });
+            let start = Instant::now();
+            let error = stream(
+                Command::new("pwsh").args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]),
+                if cancel {
+                    Duration::from_secs(10)
+                } else {
+                    Duration::from_millis(150)
+                },
+                &cancelled,
+            )
+            .unwrap_err();
+            notifier.join().unwrap();
+            assert!(
+                error.contains(if cancel { "cancelada" } else { "tempo limite" }),
+                "{error}"
+            );
+            assert!(start.elapsed() < Duration::from_secs(10));
+        }
+    }
 }
