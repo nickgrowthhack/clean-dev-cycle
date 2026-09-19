@@ -27,6 +27,13 @@ jj git fetch --remote origin
 jj bookmark track main@origin
 ```
 
+A CLI confere nome e e-mail antes de gerar a mensagem. Se uma mudança foi criada
+antes de configurar a identidade, confira `jj config list user -T builtin_config_list_detailed`.
+Para uma mudança sua com autor vazio, use `jj metaedit -r ID --update-author`.
+Para corrigir apenas a identidade de quem registrou um commit já concluído, use
+`jj metaedit -r ID --force-rewrite` e reenvie. O conteúdo e a mensagem são mantidos,
+mas o SHA muda e precisa passar pelo CI.
+
 Em um workspace sem trabalho em andamento, comece sobre a versão atual:
 
 ```sh

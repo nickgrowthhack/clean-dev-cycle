@@ -12,7 +12,9 @@ pub fn run(options: Options) -> Result<()> {
     if !options.dry_run && !options.yes && !io::stdin().is_terminal() {
         return Err("a confirmação exige um terminal. Use --dry-run ou --yes.".into());
     }
+    repository.ensure_configured_identity()?;
     let snapshot = repository.snapshot()?;
+    repository.ensure_author(&snapshot.revision)?;
     let diff = repository.diff(&snapshot.revision)?;
     let context = options
         .context_file

@@ -12,6 +12,8 @@ pub struct Revision {
     pub change: String,
     pub parents: Vec<String>,
     pub description: String,
+    pub author_complete: bool,
+    pub committer_complete: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -88,12 +90,57 @@ impl Jujutsu {
                     .ok_or_else(|| "pai inválido.".to_owned())
             })
             .collect::<Result<Vec<_>>>()?;
+        let complete = |role: &str| {
+            ["name", "email"].iter().all(|field| {
+                value[role][field]
+                    .as_str()
+                    .is_some_and(|value| !value.trim().is_empty())
+            })
+        };
         Ok(Revision {
             id: text("commit_id")?,
             change: text("change_id")?,
             parents,
             description: text("description")?,
+            author_complete: complete("author"),
+            committer_complete: complete("committer"),
         })
+    }
+
+    pub fn ensure_configured_identity(&self) -> Result<()> {
+        for field in ["user.name", "user.email"] {
+            if self
+                .run(&["--ignore-working-copy", "config", "get", field])?
+                .trim()
+                .is_empty()
+            {
+                return Err(format!(
+                    "identidade do Jujutsu incompleta ({field}). Configure nome e e-mail com jj config set --repo user.name NOME e jj config set --repo user.email EMAIL antes de gerar a mensagem."
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ensure_author(&self, revision: &Revision) -> Result<()> {
+        if !revision.author_complete {
+            return Err(format!(
+                "a mudança tem autor incompleto. Configure sua identidade e, se a mudança for sua, execute jj metaedit -r {} --update-author antes de continuar.",
+                revision.change
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn ensure_publishable_identity(&self, revision: &Revision) -> Result<()> {
+        self.ensure_author(revision)?;
+        if !revision.committer_complete {
+            return Err(format!(
+                "a mudança tem identidade de committer incompleta. Configure sua identidade e execute jj metaedit -r {} --force-rewrite para atualizar os metadados sem alterar o conteúdo ou a mensagem.",
+                revision.change
+            ));
+        }
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
@@ -152,6 +199,7 @@ impl Jujutsu {
     }
 
     pub fn finish(&self, snapshot: &Snapshot, message: &str) -> Result<()> {
+        self.ensure_configured_identity()?;
         self.ensure_unchanged(snapshot)?;
         // Pin the operation: even edits arriving after the check cannot enter this commit.
         // Jujutsu retains later working-copy edits in the new change when it next snapshots.

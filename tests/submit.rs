@@ -69,6 +69,33 @@ fn invalid_message_and_empty_change_cannot_be_submitted() {
 }
 
 #[test]
+fn missing_committer_is_reported_before_moving_the_submission_bookmark() {
+    let repo = Repo::new();
+    let remote = repo.remote();
+    repo.write("file", "preservar\n");
+    repo.jj(&[
+        "--config",
+        "user.email=''",
+        "commit",
+        "-m",
+        "docs: preservar",
+    ]);
+    let before = repo.revision("@-", "commit_id");
+    failure(
+        &repo.cli(&["submit"]).output().unwrap(),
+        "committer incompleta",
+    );
+    assert_eq!(repo.revision("@-", "commit_id"), before);
+    assert_eq!(repo.remote_ref(&remote, "main"), repo.base);
+    assert!(repo.jj(&["bookmark", "list", "nick/submit"]).is_empty());
+    repo.jj(&["metaedit", "-r", "@-", "--force-rewrite"]);
+    let repaired = repo.revision("@-", "commit_id");
+    assert_eq!(repo.git(&["diff", &before, &repaired]), "");
+    success(&repo.cli(&["submit"]).output().unwrap());
+    assert_eq!(repo.remote_ref(&remote, "nick/submit"), repaired);
+}
+
+#[test]
 fn advanced_main_requires_rebase_without_overwriting_remote_work() {
     let repo = Repo::new();
     let remote = repo.remote();

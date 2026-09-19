@@ -37,6 +37,46 @@ fn confirmation_finishes_the_reviewed_change_and_opens_an_empty_one() {
 }
 
 #[test]
+fn missing_identity_is_rejected_before_ai_without_finishing_the_change() {
+    for variable in ["JJ_USER", "JJ_EMAIL"] {
+        let repo = Repo::new();
+        repo.write("arquivo.txt", "preservar\n");
+        let before = repo.revision("@", "commit_id");
+        let output = repo
+            .cli(&["commit", "--yes", "--codex"])
+            .arg(common::fake_codex())
+            .env(variable, "")
+            .output()
+            .unwrap();
+        failure(&output, "identidade do Jujutsu incompleta");
+        assert_eq!(repo.calls(), 0);
+        assert_eq!(repo.revision("@", "commit_id"), before);
+        assert_eq!(
+            fs::read_to_string(repo.root.join("arquivo.txt")).unwrap(),
+            "preservar\n"
+        );
+    }
+}
+
+#[test]
+fn configuring_identity_does_not_silently_reattribute_an_existing_change() {
+    let repo = Repo::new();
+    repo.write("arquivo.txt", "preservar\n");
+    repo.jj(&["--config", "user.name=''", "metaedit", "--update-author"]);
+    let before = repo.revision("@", "commit_id");
+    failure(&repo.ai(&["commit", "--yes"], "valid"), "autor incompleto");
+    assert_eq!(repo.calls(), 0);
+    assert_eq!(repo.revision("@", "commit_id"), before);
+    repo.jj(&["metaedit", "--update-author"]);
+    success(&repo.ai(&["commit", "--yes"], "valid"));
+    assert_eq!(repo.revision("@-", "author.name()"), "Teste");
+    assert_eq!(
+        repo.revision("@-", "committer.email()"),
+        "teste@example.com"
+    );
+}
+
+#[test]
 fn jj_split_keeps_other_layers_out_of_the_prompt() {
     let repo = Repo::new();
     repo.write("primeira.txt", "CAMADA_ANTERIOR\n");

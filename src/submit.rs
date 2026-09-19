@@ -19,6 +19,7 @@ pub fn run(reference: &OsStr) -> Result<()> {
         return Err("conclua @ com jj commit antes de enviar a mudança.".into());
     }
     repo.ensure_no_conflicts(&revision)?;
+    repo.ensure_publishable_identity(&revision)?;
     if revision.parents != [main.id.clone()] {
         let first = repo.git.read(&[
             "rev-list",
