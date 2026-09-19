@@ -21,7 +21,6 @@ fn main() {
     if mode == "overflow" { for _ in 0..2000 { println!("{}", "x".repeat(8192)); } return; }
     if mode == "mutate" {
         fs::write(repo.join("outra.txt"), "alteração concorrente").unwrap();
-        assert!(Command::new("git").current_dir(&repo).args(["add", "outra.txt"]).status().unwrap().success());
     }
     if mode == "mutate-changelog" {
         fs::write(repo.join("CHANGELOG.md"), "alteração manual concorrente\n").unwrap();
@@ -37,7 +36,7 @@ fn main() {
     } else if mode == "malformed" {
         "não é JSON"
     } else if input.contains("Você revisa uma entrega completa") {
-        r####"{"message":"### Revisão completa de entregas\n\nCada PR passa a ter uma síntese do resultado acumulado, preservando as notas existentes.","needs_context":false,"reason":""}"####
+        r####"{"message":"### Revisão completa de entregas\n\nAs mudanças do intervalo recebem uma síntese do resultado acumulado.","needs_context":false,"reason":""}"####
     } else {
         r#"{"message":"feat(cli): implementar geração de commits","needs_context":false,"reason":""}"#
     };

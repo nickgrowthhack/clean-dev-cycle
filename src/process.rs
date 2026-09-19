@@ -44,7 +44,9 @@ pub fn capture(
         let reason = if cancelled.load(Ordering::Relaxed) {
             Some("operação cancelada.")
         } else if start.elapsed() >= timeout {
-            Some("tempo limite excedido; nenhum commit foi solicitado ao Git.")
+            Some(
+                "tempo limite excedido; confira o estado antes de repetir uma operação de escrita.",
+            )
         } else if overflow.load(Ordering::Relaxed) {
             Some("a saída do processo excedeu o limite permitido.")
         } else {
