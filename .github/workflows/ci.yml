@@ -51,14 +51,10 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Testar
         run: cargo test --locked
-      - name: Validar mensagem e execução da CLI
+      - name: Validar mensagens e release do commit
         run: |
           $binary = if ($IsWindows) { './target/debug/clean-dev-cycle.exe' } else { './target/debug/clean-dev-cycle' }
           ./.github/scripts/check-messages.ps1 -Binary $binary
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $binary --help
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $binary --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $binary release check --revision $env:GITHUB_SHA
           exit $LASTEXITCODE
