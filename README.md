@@ -11,7 +11,7 @@ mudança no jj → commit com versão e notas → submit → checks locais → m
 
 Uma mudança deve resolver uma parte compreensível do problema e manter o projeto
 funcionando. Não é necessário terminar uma funcionalidade inteira para integrar.
-O [guia do fluxo](docs/CYCLE.md) explica stacks, falhas e recuperação.
+O [guia do ciclo](docs/CYCLE.md) resume o caminho diário e a recuperação de falhas.
 
 ## Preparar o ambiente
 
@@ -89,11 +89,10 @@ clean-dev-cycle submit --revision ID_DA_MUDANCA
 ```
 
 A camada precisa ser filha direta de `main@origin`. Se a base avançar ou a mudança
-for reescrita durante os checks, o envio é recusado. Faça rebase, revise e reenvie.
+for reescrita durante os checks, o envio é recusado.
 Reenviar um SHA já integrado informa sucesso sem repetir os checks ou o push.
-Cada push tem sua execução de CI. Uma falha após publicação exige uma correção
-ou reversão como novo commit na main, sem reescrever o histórico.
-Confira a execução na [página de Actions](https://github.com/nickgrowthhack/clean-dev-cycle/actions).
+Cada push tem sua execução de CI, visível na
+[página de Actions](https://github.com/nickgrowthhack/clean-dev-cycle/actions).
 
 ## Configurar os checks locais
 
@@ -227,8 +226,7 @@ Para notas manuais, use título `###`, linha em branco e síntese. `--entry-file
 aceita entregas com binários ou diffs que excedem 128 KiB. Combine com
 `--message` para dispensar completamente a IA. Nenhum diff é truncado.
 
-Rebase ou edição posterior pode invalidar a preparação. Reabra a mudança com
-`jj edit ID` e execute `clean-dev-cycle commit` novamente. Um `jj commit` direto
+Rebase ou edição posterior invalida a preparação. Um `jj commit` direto
 continua possível para mudanças internas. Uma mudança elegível sem preparação
 é recusada pelo `submit` e pelo CI.
 
@@ -254,7 +252,7 @@ já criada no SHA esperado é reutilizada, uma release correspondente não é
 duplicada e assets já enviados não são reenviados. Tag em outro SHA, notas
 divergentes ou asset com outro tamanho causam erro sem sobrescrita.
 Publicações atrasadas não substituem uma versão maior como `Latest`.
-Se o CI falhar, corrija em uma nova mudança. Nunca mova uma tag já publicada.
+Nunca mova uma tag já publicada.
 
 ## Desenvolvimento
 

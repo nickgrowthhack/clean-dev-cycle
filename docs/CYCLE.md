@@ -12,28 +12,10 @@ de trabalho. O Git fornece armazenamento e transporte para GitHub.
 4. Execute `clean-dev-cycle submit`. O padrão é a mudança concluída em `@-`.
 5. O submit verifica o commit e publica diretamente na main. Acompanhe o CI.
 
-Use `submit --revision ID` para enviar uma camada anterior. A ferramenta indica
-qual camada vem primeiro quando o stack ainda tem uma dependência não integrada.
-Não envie `@`, que ainda está em edição. `main` é a única branch local e remota.
-Os stacks são mudanças locais do Jujutsu, sem bookmarks adicionais.
-
-## O que chega à main
-
-O envio deve conter exatamente um commit filho da main atual, com alteração de
-arquivos, mensagem e identidade válidas e sem conflitos. Antes do push, o submit
-executa os comandos de `clean-dev-cycle.toml` do commit em um clone temporário,
-com HEAD destacado. Falhas ou alterações de arquivos versionados pelos checks
-impedem a publicação. Consulte a configuração e os limites no [README](../README.md).
-
-O SHA aprovado localmente é enviado diretamente à main. O CI verifica Linux e
-Windows depois da publicação. Um novo push não cancela a execução anterior.
-Os checks locais são uma regra do submit e não substituem uma proteção no servidor
-contra envios manuais.
-
-Force-push, exclusão da main e histórico não linear são bloqueados,
-inclusive para administradores. Com releases ativadas, uma mudança elegível
-precisa incluir versão e changelog válidos. A publicação da tag e da release
-acontece depois do CI. Deploy permanece independente.
+`submit --revision ID` envia uma camada anterior; a CLI indica qual vem primeiro.
+Não envie `@`, que ainda está em edição. Os stacks são mudanças locais do Jujutsu,
+sem bookmarks adicionais. As regras do `submit`, dos checks e das releases estão
+no [README](../README.md).
 
 ## Quando algo falha
 
@@ -46,7 +28,6 @@ acontece depois do CI. Deploy permanece independente.
   novamente. O resultado anterior não é reaproveitado.
 - Preparação de release desatualizada após edição ou rebase: reabra com `jj edit`
   e conclua novamente pela CLI. O submit não reescreve a mudança para corrigir notas.
-- Mudança já integrada: `submit` informa isso e não repete checks nem push.
 - CI falhou ou houve regressão publicada: prepare uma correção ou reversão como
   nova mudança e envie pelo mesmo fluxo. Não reescreva a main.
 
