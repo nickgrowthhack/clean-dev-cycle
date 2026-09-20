@@ -3,43 +3,10 @@ use common::{Repo, failure, success};
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
-    sync::OnceLock,
 };
-use tempfile::TempDir;
 
 const NOTE: &str = "### Entrega revisada\n\nResultado completo com as mudanças verificadas.\n";
 const MANIFEST: &str = ".clean-dev-cycle-release.json";
-
-fn gh_directory() -> &'static Path {
-    static DIRECTORY: OnceLock<TempDir> = OnceLock::new();
-    DIRECTORY
-        .get_or_init(|| {
-            let dir = tempfile::tempdir().unwrap();
-            success(
-                &Command::new("rustc")
-                    .args(["--edition=2024", "--crate-name", "fake_gh"])
-                    .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_gh.rs"))
-                    .arg("-o")
-                    .arg(
-                        dir.path()
-                            .join(format!("gh{}", std::env::consts::EXE_SUFFIX)),
-                    )
-                    .output()
-                    .unwrap(),
-            );
-            dir
-        })
-        .path()
-}
-
-fn command(repo: &Repo, args: &[&str]) -> Command {
-    let mut paths = vec![gh_directory().to_owned()];
-    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
-    let mut cmd = repo.cli(args);
-    cmd.env("PATH", std::env::join_paths(paths).unwrap());
-    cmd
-}
 
 fn project() -> (Repo, PathBuf) {
     let repo = Repo::new();
@@ -58,19 +25,17 @@ fn project() -> (Repo, PathBuf) {
 
 fn commit(repo: &Repo, note: &Path, message: &str) {
     success(
-        &command(
-            repo,
-            &[
+        &repo
+            .cli(&[
                 "commit",
                 "--yes",
                 "--message",
                 message,
                 "--entry-file",
                 note.to_str().unwrap(),
-            ],
-        )
-        .output()
-        .unwrap(),
+            ])
+            .output()
+            .unwrap(),
     );
 }
 
@@ -109,31 +74,27 @@ fn first_release_is_atomic_without_package_files_and_finishes_original_change() 
 fn preview_and_provider_failure_do_not_write_release_files() {
     let (repo, note) = project();
     let before = repo.revision("@", "commit_id");
-    let output = command(
-        &repo,
-        &[
+    let output = repo
+        .cli(&[
             "commit",
             "--dry-run",
             "--message",
             "feat: entrega",
             "--entry-file",
             note.to_str().unwrap(),
-        ],
-    )
-    .output()
-    .unwrap();
+        ])
+        .output()
+        .unwrap();
     success(&output);
     assert!(String::from_utf8_lossy(&output.stdout).contains("0.1.0"));
     assert_eq!(repo.revision("@", "commit_id"), before);
     assert!(!repo.root.join(MANIFEST).exists());
-    let output = command(
-        &repo,
-        &["commit", "--yes", "--message", "feat: entrega", "--codex"],
-    )
-    .arg(common::fake_codex())
-    .env("FAKE_MODE", "failure")
-    .output()
-    .unwrap();
+    let output = repo
+        .cli(&["commit", "--yes", "--message", "feat: entrega", "--codex"])
+        .arg(common::fake_codex())
+        .env("FAKE_MODE", "failure")
+        .output()
+        .unwrap();
     failure(&output, "Codex CLI falhou");
     assert_eq!(repo.revision("@", "commit_id"), before);
 }
@@ -214,7 +175,8 @@ fn internal_changes_do_not_release_and_manual_eligible_commit_requires_preparati
     commit(&repo, &note, "feat: inicial");
     repo.write("docs.txt", "internal\n");
     success(
-        &command(&repo, &["commit", "--yes", "--message", "docs: orientar"])
+        &repo
+            .cli(&["commit", "--yes", "--message", "docs: orientar"])
             .output()
             .unwrap(),
     );
@@ -248,21 +210,19 @@ fn ai_uses_published_range_preserving_dependency_changes_and_excluding_generated
     .unwrap();
     repo.write("deps.txt", "library = 2\n");
     repo.write("code.txt", "next feature\n");
-    let output = command(
-        &repo,
-        &[
+    let output = repo
+        .cli(&[
             "commit",
             "--yes",
             "--message",
             "feat: dependência nova",
             "--codex",
-        ],
-    )
-    .arg(common::fake_codex())
-    .env("FAKE_GH_RELEASES", list)
-    .env("FAKE_GH_SHA", &base)
-    .output()
-    .unwrap();
+        ])
+        .arg(common::fake_codex())
+        .env("FAKE_GH_RELEASES", list)
+        .env("FAKE_GH_SHA", &base)
+        .output()
+        .unwrap();
     success(&output);
     let prompt = fs::read_to_string(repo.directory.path().join("calls.prompt")).unwrap();
     assert!(prompt.contains("library = 2") && prompt.contains("next feature"));
@@ -273,14 +233,12 @@ fn ai_uses_published_range_preserving_dependency_changes_and_excluding_generated
 #[test]
 fn concurrent_edits_during_release_generation_preserve_workspace_and_abort() {
     let (repo, _) = project();
-    let output = command(
-        &repo,
-        &["commit", "--yes", "--message", "feat: entrega", "--codex"],
-    )
-    .arg(common::fake_codex())
-    .env("FAKE_MODE", "mutate")
-    .output()
-    .unwrap();
+    let output = repo
+        .cli(&["commit", "--yes", "--message", "feat: entrega", "--codex"])
+        .arg(common::fake_codex())
+        .env("FAKE_MODE", "mutate")
+        .output()
+        .unwrap();
     failure(&output, "mudou durante a revisão");
     assert!(repo.root.join("outra.txt").exists());
     assert!(!repo.root.join(MANIFEST).exists());
@@ -367,19 +325,17 @@ fn initial_version_starts_the_first_release_and_invalid_settings_are_rejected() 
     ] {
         let (repo, note) = project();
         repo.write("clean-dev-cycle.toml", config);
-        let output = command(
-            &repo,
-            &[
+        let output = repo
+            .cli(&[
                 "commit",
                 "--yes",
                 "--message",
                 "feat: inválida",
                 "--entry-file",
                 note.to_str().unwrap(),
-            ],
-        )
-        .output()
-        .unwrap();
+            ])
+            .output()
+            .unwrap();
         failure(&output, expected);
         repo.jj(&["commit", "-m", "feat: manual"]);
         failure(
@@ -406,21 +362,19 @@ fn published_tags_without_a_manifest_continue_the_version_sequence() {
         r#"[{"tag_name":"v0.4.0","draft":false,"prerelease":false}]"#,
     )
     .unwrap();
-    let output = command(
-        &repo,
-        &[
+    let output = repo
+        .cli(&[
             "commit",
             "--yes",
             "--message",
             "feat: continuar",
             "--entry-file",
             note.to_str().unwrap(),
-        ],
-    )
-    .env("FAKE_GH_RELEASES", list)
-    .env("FAKE_GH_SHA", &repo.base)
-    .output()
-    .unwrap();
+        ])
+        .env("FAKE_GH_RELEASES", list)
+        .env("FAKE_GH_SHA", &repo.base)
+        .output()
+        .unwrap();
     success(&output);
     let data: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(repo.root.join(MANIFEST)).unwrap()).unwrap();

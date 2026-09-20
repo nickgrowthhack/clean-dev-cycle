@@ -16,34 +16,43 @@ pub fn success(output: &Output) {
     );
 }
 pub fn failure(output: &Output, expected: &str) {
-    assert!(!output.status.success(), "operação deveria falhar");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains(expected),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains(expected), "{stderr}");
 }
-pub fn fake_codex() -> PathBuf {
+
+// The doubles for codex, the checks program and gh, compiled once per test binary.
+// They sit first on the PATH of every CLI invocation.
+fn fixtures() -> &'static Path {
     static DIRECTORY: OnceLock<TempDir> = OnceLock::new();
     DIRECTORY
         .get_or_init(|| {
             let directory = tempfile::tempdir().unwrap();
-            let output = Command::new("rustc")
-                .args(["--edition=2024", "--crate-name", "fake_codex"])
-                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_codex.rs"))
-                .arg("-o")
-                .arg(
-                    directory
-                        .path()
-                        .join(format!("codex{}", std::env::consts::EXE_SUFFIX)),
-                )
-                .output()
-                .unwrap();
-            success(&output);
+            for name in ["codex", "checks", "gh"] {
+                let output = Command::new("rustc")
+                    .args(["--edition=2024", "--crate-name", &format!("fake_{name}")])
+                    .arg(
+                        Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join(format!("tests/fixtures/fake_{name}.rs")),
+                    )
+                    .arg("-o")
+                    .arg(directory.path().join(executable(name)))
+                    .output()
+                    .unwrap();
+                success(&output);
+            }
             directory
         })
         .path()
-        .join(format!("codex{}", std::env::consts::EXE_SUFFIX))
+}
+fn executable(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+pub fn fake_codex() -> PathBuf {
+    fixtures().join(executable("codex"))
+}
+pub fn fake_checks() -> PathBuf {
+    fixtures().join(executable("checks"))
 }
 
 pub struct Repo {
@@ -52,28 +61,6 @@ pub struct Repo {
     pub base: String,
 }
 
-pub fn fake_checks() -> PathBuf {
-    static DIRECTORY: OnceLock<TempDir> = OnceLock::new();
-    DIRECTORY
-        .get_or_init(|| {
-            let directory = tempfile::tempdir().unwrap();
-            let output = Command::new("rustc")
-                .args(["--edition=2024", "--crate-name", "fake_checks"])
-                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_checks.rs"))
-                .arg("-o")
-                .arg(
-                    directory
-                        .path()
-                        .join(format!("checks{}", std::env::consts::EXE_SUFFIX)),
-                )
-                .output()
-                .unwrap();
-            success(&output);
-            directory
-        })
-        .path()
-        .join(format!("checks{}", std::env::consts::EXE_SUFFIX))
-}
 impl Repo {
     pub fn new() -> Self {
         let directory = tempfile::Builder::new()
@@ -151,9 +138,14 @@ impl Repo {
         fs::write(self.root.join(path), contents).unwrap();
     }
     pub fn cli(&self, args: &[&str]) -> Command {
+        let mut paths = vec![fixtures().to_owned()];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
         let mut command = self.command(env!("CARGO_BIN_EXE_clean-dev-cycle"));
         command
             .args(args)
+            .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_REPO", &self.root)
             .env("FAKE_LOG", self.directory.path().join("calls"))
             .env("FAKE_MODE", "valid");
