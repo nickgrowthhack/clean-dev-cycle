@@ -1,4 +1,8 @@
-use crate::{Result, git::Repository, process};
+use crate::{
+    Result,
+    git::{self, Repository},
+    process,
+};
 use std::{ffi::OsStr, path::Path, process::Command, sync::atomic::AtomicBool, time::Duration};
 
 const CONFIG: &str = "clean-dev-cycle.toml";
@@ -40,23 +44,6 @@ fn commands(text: &str) -> Result<Vec<Vec<String>>> {
         .collect()
 }
 
-fn git(command: &mut Command, cancelled: &AtomicBool) -> Result<()> {
-    let output = process::capture(
-        command,
-        Vec::new(),
-        Duration::from_secs(120),
-        4 * 1024 * 1024,
-        cancelled,
-    )?;
-    if !output.status.success() {
-        return Err(format!(
-            "falha ao preparar os checks: {}",
-            process::diagnostic(&output.stderr)
-        ));
-    }
-    Ok(())
-}
-
 pub fn run(repo: &Repository, revision: &str, cancelled: &AtomicBool) -> Result<()> {
     let config = repo
         .read(&["show", &format!("{revision}:{CONFIG}")])
@@ -70,16 +57,18 @@ pub fn run(repo: &Repository, revision: &str, cancelled: &AtomicBool) -> Result<
         .map_err(|e| format!("não foi possível criar a cópia de verificação: {e}."))?;
     let root = directory.path().join("repo");
     eprintln!("Verificando o commit {revision} em uma cópia temporária...");
-    git(
+    git::run(
         Command::new("git")
             .args(["clone", "--no-hardlinks", "--no-checkout", "--"])
             .arg(&repo.root)
             .arg(&root),
+        Vec::new(),
         cancelled,
     )?;
     let isolated = Repository { root };
-    git(
+    git::run(
         isolated.command().args(["checkout", "--detach", revision]),
+        Vec::new(),
         cancelled,
     )?;
     for (index, args) in commands.iter().enumerate() {

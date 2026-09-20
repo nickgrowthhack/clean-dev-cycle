@@ -1,13 +1,22 @@
 use crate::{Result, process};
-use std::{
-    ffi::OsStr,
-    path::PathBuf,
-    process::{Command, Output},
-    sync::atomic::AtomicBool,
-    time::Duration,
-};
+use std::{ffi::OsStr, path::PathBuf, process::Command, sync::atomic::AtomicBool, time::Duration};
 
 const MAX_DIFF_BYTES: usize = 128 * 1024;
+
+// Every Git invocation shares one bound on time and output size.
+pub fn run(command: &mut Command, input: Vec<u8>, cancelled: &AtomicBool) -> Result<Vec<u8>> {
+    let output = process::capture(
+        command,
+        input,
+        Duration::from_secs(120),
+        4 * 1024 * 1024,
+        cancelled,
+    )?;
+    if !output.status.success() {
+        return Err(format!("Git: {}", process::diagnostic(&output.stderr)));
+    }
+    Ok(output.stdout)
+}
 
 pub struct Repository {
     pub root: PathBuf,
@@ -17,15 +26,13 @@ impl Repository {
     pub fn discover() -> Result<Self> {
         let current = std::env::current_dir().map_err(|e| e.to_string())?;
         let provisional = Self { root: current };
-        let output = provisional.output(&["rev-parse", "--show-toplevel"])?;
-        if !output.status.success() {
-            return Err(
-                "execute este comando dentro de um repositório Git com diretório de trabalho."
-                    .into(),
-            );
-        }
+        let root = provisional
+            .read(&["rev-parse", "--show-toplevel"])
+            .map_err(
+                |_| "execute este comando dentro de um repositório Git com diretório de trabalho.",
+            )?;
         Ok(Self {
-            root: output_path(output.stdout)?,
+            root: output_path(root)?,
         })
     }
 
@@ -35,22 +42,20 @@ impl Repository {
         }
         let mut revision = reference.to_owned();
         revision.push("^{commit}");
-        let output = process::capture(
+        let output = run(
             self.command()
                 .args(["rev-parse", "--verify", "--end-of-options"])
                 .arg(revision),
             Vec::new(),
-            Duration::from_secs(30),
-            4096,
-            &AtomicBool::new(false),
-        )?;
-        if !output.status.success() {
-            return Err(format!(
+            &process::NONE,
+        )
+        .map_err(|_| {
+            format!(
                 "a referência {} não resolve para um commit local.",
                 reference.to_string_lossy()
-            ));
-        }
-        String::from_utf8(output.stdout)
+            )
+        })?;
+        String::from_utf8(output)
             .map(|s| s.trim().to_owned())
             .map_err(|_| "identificador de commit inválido.".into())
     }
@@ -63,25 +68,21 @@ impl Repository {
         command
     }
 
-    fn output(&self, args: &[&str]) -> Result<Output> {
-        process::capture(
-            self.command().args(args),
-            Vec::new(),
-            Duration::from_secs(30),
-            4 * 1024 * 1024,
-            &AtomicBool::new(false),
-        )
+    pub fn read(&self, args: &[&str]) -> Result<Vec<u8>> {
+        run(self.command().args(args), Vec::new(), &process::NONE)
     }
 
-    pub fn read(&self, args: &[&str]) -> Result<Vec<u8>> {
-        let output = self.output(args)?;
-        if !output.status.success() {
-            return Err(format!(
-                "Git não conseguiu ler o repositório: {}",
-                process::diagnostic(&output.stderr)
-            ));
+    pub fn ensure_full_history(&self) -> Result<()> {
+        if self.read(&["rev-parse", "--is-shallow-repository"])? != b"false\n" {
+            return Err("esta operação exige histórico completo.".into());
         }
-        Ok(output.stdout)
+        Ok(())
+    }
+
+    pub fn has_changes(&self, base: &str, head: &str) -> Result<bool> {
+        Ok(!self
+            .read(&["diff", "--name-only", base, head, "--"])?
+            .is_empty())
     }
 
     pub fn diff_between(&self, base: &str, head: &str) -> Result<String> {
@@ -140,7 +141,7 @@ impl Repository {
             Vec::new(),
             Duration::from_secs(30),
             MAX_DIFF_BYTES,
-            &AtomicBool::new(false),
+            &process::NONE,
         )
         .map_err(|e| format!("não foi possível obter o diff completo (limite de 128 KiB): {e}"))?;
         if !output.status.success() {

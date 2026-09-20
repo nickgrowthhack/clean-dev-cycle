@@ -1,10 +1,7 @@
-use crate::{Result, cli::CommitOptions, jj::Jujutsu, message, provider, release};
+use crate::{Result, cli::CommitOptions, jj::Jujutsu, message, process, provider, release};
 use std::{
     io::{self, BufRead, IsTerminal, Write},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 pub fn run(options: CommitOptions) -> Result<()> {
@@ -16,15 +13,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
     repository.ensure_configured_identity()?;
     let snapshot = repository.snapshot()?;
     repository.ensure_author(&snapshot.revision)?;
-    let context = generation
-        .context_file
-        .as_ref()
-        .map(|p| provider::read_text(p, 16 * 1024))
-        .transpose()?
-        .unwrap_or_default();
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let signal = Arc::clone(&cancelled);
-    ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed)).map_err(|e| e.to_string())?;
+    let cancelled = process::cancellation()?;
     let generated = if let Some(manual) = &options.message {
         message::validate(manual)?
     } else {
@@ -36,23 +25,15 @@ pub fn run(options: CommitOptions) -> Result<()> {
         provider::generate(
             generation,
             &diff,
-            &context,
-            &cancelled,
+            cancelled,
             provider::INSTRUCTIONS,
             message::validate,
         )?
     };
     if snapshot.revision.parents.len() != 1
-        || repository
+        || !repository
             .git
-            .read(&[
-                "diff",
-                "--name-only",
-                &snapshot.revision.parents[0],
-                &snapshot.revision.id,
-                "--",
-            ])?
-            .is_empty()
+            .has_changes(&snapshot.revision.parents[0], &snapshot.revision.id)?
     {
         return Err("não há alterações em uma mudança linear para concluir.".into());
     }
@@ -65,7 +46,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
             generated,
             &mut io::stdin().lock(),
             &mut io::stdout().lock(),
-            &cancelled,
+            cancelled,
             message::validate,
         )?
     };
@@ -82,7 +63,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
         &snapshot.revision.id,
         &reviewed,
         &options,
-        &cancelled,
+        cancelled,
     )?;
     repository.ensure_unchanged(&snapshot)?;
     if let Some(mut prepared) = prepared {
@@ -98,7 +79,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
                 prepared.notes.clone(),
                 &mut io::stdin().lock(),
                 &mut io::stdout().lock(),
-                &cancelled,
+                cancelled,
                 crate::changelog::validate,
             )?;
             let Some(notes) = notes else {
@@ -112,7 +93,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
         if cancelled.load(Ordering::Relaxed) {
             return Err("operação cancelada.".into());
         }
-        repository.finish_release(&snapshot, &reviewed, &prepared.tree, &cancelled)?;
+        repository.finish_release(&snapshot, &reviewed, &prepared.tree, cancelled)?;
     } else {
         if options.dry_run {
             return Ok(());

@@ -16,9 +16,7 @@ pub fn run(input: CheckCommitInput) -> Result<()> {
         }
         CheckCommitInput::Range { from, to } => {
             let repository = Repository::discover()?;
-            if repository.read(&["rev-parse", "--is-shallow-repository"])? != b"false\n" {
-                return Err("a validação de intervalos exige histórico completo.".into());
-            }
+            repository.ensure_full_history()?;
             let from = repository.resolve_commit(&from)?;
             let to = repository.resolve_commit(&to)?;
             validate_range(&repository, &from, &to)

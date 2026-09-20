@@ -26,11 +26,16 @@ sem cercas Markdown, prefácio ou explicações fora do JSON solicitado.";
 pub fn generate(
     options: &Options,
     diff: &str,
-    context: &str,
     cancelled: &AtomicBool,
     instructions: &str,
     validate: fn(&str) -> Result<String>,
 ) -> Result<String> {
+    let context = options
+        .context_file
+        .as_ref()
+        .map(|p| read_text(p, 16 * 1024))
+        .transpose()?
+        .unwrap_or_default();
     let executable = executable::codex(&options.codex)?;
     let directory =
         tempfile::tempdir().map_err(|e| format!("não foi possível preparar a geração: {e}."))?;

@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::AtomicBool,
     time::Duration,
 };
 
@@ -64,7 +63,7 @@ impl Hosting for Github {
             input,
             Duration::from_secs(120),
             8 * 1024 * 1024,
-            &AtomicBool::new(false),
+            &process::NONE,
         )?;
         if !output.status.success() {
             let error = process::diagnostic(&output.stderr);
@@ -89,7 +88,7 @@ impl Hosting for Github {
             Vec::new(),
             Duration::from_secs(10 * 60),
             4 * 1024 * 1024,
-            &AtomicBool::new(false),
+            &process::NONE,
         )?;
         if !output.status.success() {
             return Err(format!("GitHub: {}", process::diagnostic(&output.stderr)));

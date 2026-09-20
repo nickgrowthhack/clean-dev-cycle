@@ -56,7 +56,7 @@ impl Jujutsu {
             Vec::new(),
             Duration::from_secs(120),
             4 * 1024 * 1024,
-            &AtomicBool::new(false),
+            &process::NONE,
         )?;
         if !output.status.success() {
             return Err(format!("Jujutsu: {}", process::diagnostic(&output.stderr)));
@@ -156,9 +156,8 @@ impl Jujutsu {
         Ok(())
     }
 
-    pub fn snapshot(&self) -> Result<Snapshot> {
-        self.run(&["status"])?;
-        let operation = self.run(&[
+    pub fn operation(&self) -> Result<String> {
+        self.run(&[
             "--ignore-working-copy",
             "op",
             "log",
@@ -167,7 +166,12 @@ impl Jujutsu {
             "--no-graph",
             "-T",
             "id",
-        ])?;
+        ])
+    }
+
+    pub fn snapshot(&self) -> Result<Snapshot> {
+        self.run(&["status"])?;
+        let operation = self.operation()?;
         let revision = self.revision(OsStr::new("@"), Some(&operation))?;
         self.ensure_no_conflicts(&revision)?;
         Ok(Snapshot {
@@ -195,17 +199,14 @@ impl Jujutsu {
 
     pub fn diff(&self, revision: &Revision) -> Result<String> {
         let base = match revision.parents.as_slice() {
-            [] => String::from_utf8(self.git.read(&["hash-object", "-t", "tree", "--stdin"])?)
-                .map_err(|_| "árvore vazia inválida.")?
-                .trim()
-                .to_owned(),
-            [parent] if parent.chars().all(|c| c == '0') => {
+            [parent] if !parent.chars().all(|c| c == '0') => parent.clone(),
+            // A root change diffs against the empty tree.
+            [] | [_] => {
                 String::from_utf8(self.git.read(&["hash-object", "-t", "tree", "--stdin"])?)
                     .map_err(|_| "árvore vazia inválida.")?
                     .trim()
                     .to_owned()
             }
-            [parent] => parent.clone(),
             _ => return Err("conclua uma mudança linear, sem commit de merge.".into()),
         };
         self.git.diff_between(&base, &revision.id)

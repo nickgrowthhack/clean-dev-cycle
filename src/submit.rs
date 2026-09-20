@@ -1,18 +1,10 @@
-use crate::{Result, check_commit, checks, jj::Jujutsu, message};
-use std::{
-    ffi::OsStr,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use crate::{Result, check_commit, checks, jj::Jujutsu, message, process};
+use std::{ffi::OsStr, sync::atomic::Ordering};
 
 const BOOKMARK: &str = "main";
 
 pub fn run(reference: &OsStr) -> Result<()> {
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let signal = Arc::clone(&cancelled);
-    ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed)).map_err(|e| e.to_string())?;
+    let cancelled = process::cancellation()?;
     let repo = Jujutsu::discover()?;
     repo.run(&["status"])?;
     // Resolve once before fetch: never silently select another change when refs move.
@@ -50,14 +42,10 @@ pub fn run(reference: &OsStr) -> Result<()> {
     message::validate(&revision.description)?;
     check_commit::validate_range(&repo.git, &main.id, &revision.id)?;
     crate::release::check(&repo.git, &revision.id)?;
-    if repo
-        .git
-        .read(&["diff", "--name-only", &main.id, &revision.id, "--"])?
-        .is_empty()
-    {
+    if !repo.git.has_changes(&main.id, &revision.id)? {
         return Err("não há alterações de arquivos para enviar.".into());
     }
-    checks::run(&repo.git, &revision.id, &cancelled)?;
+    checks::run(&repo.git, &revision.id, cancelled)?;
     repo.run(&["git", "fetch", "--remote", "origin"])?;
     if repo.revision(OsStr::new("main@origin"), None)?.id != main.id {
         return Err("a main avançou durante os checks. Atualize a base, revise e reenvie.".into());
@@ -70,16 +58,7 @@ pub fn run(reference: &OsStr) -> Result<()> {
         return Err("operação cancelada.".into());
     }
     repo.run(&["bookmark", "set", BOOKMARK, "--revision", &revision.id])?;
-    let operation = repo.run(&[
-        "--ignore-working-copy",
-        "op",
-        "log",
-        "--limit",
-        "1",
-        "--no-graph",
-        "-T",
-        "id",
-    ])?;
+    let operation = repo.operation()?;
     if repo.revision(OsStr::new(BOOKMARK), Some(&operation))? != revision
         || repo
             .revision(OsStr::new("main@origin"), Some(&operation))?

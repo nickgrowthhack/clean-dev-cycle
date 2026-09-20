@@ -1,10 +1,13 @@
 use crate::{
-    Result, changelog, cli::CommitOptions, git::Repository, github, message, process, provider,
+    Result, changelog,
+    cli::CommitOptions,
+    git::{self, Repository},
+    github, message, process, provider,
 };
 use next_version::VersionUpdater;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{ffi::OsStr, path::PathBuf, sync::atomic::AtomicBool, time::Duration};
+use std::{ffi::OsStr, path::PathBuf, sync::atomic::AtomicBool};
 
 pub const MANIFEST: &str = ".clean-dev-cycle-release.json";
 pub const FILES: [&str; 2] = ["CHANGELOG.md", MANIFEST];
@@ -26,6 +29,14 @@ pub struct Manifest {
     pub fingerprint: String,
     pub message: String,
     pub notes_hash: String,
+}
+
+impl Manifest {
+    fn render(&self) -> Result<String> {
+        serde_json::to_string_pretty(self)
+            .map(|json| format!("{json}\n"))
+            .map_err(|e| e.to_string())
+    }
 }
 
 pub struct Prepared {
@@ -117,17 +128,7 @@ fn hash(repo: &Repository, bytes: &[u8], write: bool) -> Result<String> {
 }
 
 fn capture(command: &mut std::process::Command, input: Vec<u8>) -> Result<String> {
-    let output = process::capture(
-        command,
-        input,
-        Duration::from_secs(120),
-        4 * 1024 * 1024,
-        &AtomicBool::new(false),
-    )?;
-    if !output.status.success() {
-        return Err(process::diagnostic(&output.stderr));
-    }
-    String::from_utf8(output.stdout)
+    String::from_utf8(git::run(command, input, &process::NONE)?)
         .map(|s| s.trim().into())
         .map_err(|e| e.to_string())
 }
@@ -296,9 +297,7 @@ pub fn prepare(
             return Ok(None);
         }
     };
-    if repo.read(&["rev-parse", "--is-shallow-repository"])? != b"false\n" {
-        return Err("releases exigem histórico completo.".into());
-    }
+    repo.ensure_full_history()?;
     let parent = parent(repo, revision)?;
     let published = latest_published(repo, &parent)?;
     let parent_manifest = manifest(repo, &parent)?;
@@ -324,17 +323,9 @@ pub fn prepare(
         let diff = repo.diff_between(&from, &content).map_err(|e| {
             format!("{e}\nUse commit --entry-file para fornecer notas revisadas sem IA.")
         })?;
-        let context = options
-            .generation
-            .context_file
-            .as_ref()
-            .map(|p| provider::read_text(p, 16 * 1024))
-            .transpose()?
-            .unwrap_or_default();
         provider::generate(
             &options.generation,
             &diff,
-            &context,
             cancelled,
             changelog::INSTRUCTIONS,
             changelog::validate,
@@ -384,13 +375,7 @@ pub fn prepare(
     };
     let edits = [
         ("CHANGELOG.md", Some(log)),
-        (
-            MANIFEST,
-            Some(format!(
-                "{}\n",
-                serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?
-            )),
-        ),
+        (MANIFEST, Some(metadata.render()?)),
     ];
     Ok(Some(Prepared {
         tree: tree(repo, revision, &edits)?,
@@ -488,13 +473,7 @@ pub fn revise_notes(repo: &Repository, prepared: &mut Prepared, notes: &str) -> 
         &prepared.tree,
         &[
             ("CHANGELOG.md", Some(log.replacen(&old, &new, 1))),
-            (
-                MANIFEST,
-                Some(format!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?
-                )),
-            ),
+            (MANIFEST, Some(metadata.render()?)),
         ],
     )?;
     prepared.notes = notes;

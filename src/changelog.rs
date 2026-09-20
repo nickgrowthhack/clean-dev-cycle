@@ -1,8 +1,4 @@
-use crate::{Result, cli::ChangelogOptions, git::Repository, message, provider};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use crate::{Result, cli::ChangelogOptions, git::Repository, message, process, provider};
 
 pub(crate) const INSTRUCTIONS: &str = "Você revisa uma entrega completa de um intervalo de mudanças para o changelog, em português do Brasil.
 Sintetize o diff acumulado: resultado concreto, impacto e incompatibilidades demonstradas.
@@ -16,18 +12,13 @@ Retorne apenas o objeto JSON solicitado.";
 
 pub fn run(options: ChangelogOptions) -> Result<()> {
     let repo = Repository::discover()?;
-    if repo.read(&["rev-parse", "--is-shallow-repository"])? != b"false\n" {
-        return Err("o changelog exige histórico completo.".into());
-    }
+    repo.ensure_full_history()?;
     let from = repo.resolve_commit(&options.from)?;
     let to = repo.resolve_commit(&options.to)?;
     if repo.read(&["merge-base", &from, &to])? != format!("{from}\n").as_bytes() {
         return Err("--from deve ser ancestral de --to.".into());
     }
-    if repo
-        .read(&["diff", "--name-only", &from, &to, "--"])?
-        .is_empty()
-    {
+    if !repo.has_changes(&from, &to)? {
         return Err("não há alterações no intervalo selecionado.".into());
     }
     let note = if let Some(path) = &options.entry_file {
@@ -36,22 +27,10 @@ pub fn run(options: ChangelogOptions) -> Result<()> {
         let diff = repo
             .diff_between(&from, &to)
             .map_err(|e| format!("{e}\nUse --entry-file para fornecer a síntese sem IA."))?;
-        let context = options
-            .generation
-            .context_file
-            .as_ref()
-            .map(|p| provider::read_text(p, 16 * 1024))
-            .transpose()?
-            .unwrap_or_default();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let signal = Arc::clone(&cancelled);
-        ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))
-            .map_err(|e| e.to_string())?;
         provider::generate(
             &options.generation,
             &diff,
-            &context,
-            &cancelled,
+            process::cancellation()?,
             INSTRUCTIONS,
             validate,
         )?

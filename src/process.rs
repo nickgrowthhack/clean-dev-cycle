@@ -10,6 +10,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+// For commands that must run to completion regardless of Ctrl-C.
+pub static NONE: AtomicBool = AtomicBool::new(false);
+
+// Ctrl-C only raises the flag; every command checks it at a safe point.
+pub fn cancellation() -> Result<&'static AtomicBool> {
+    ctrlc::set_handler(|| CANCELLED.store(true, Ordering::Relaxed)).map_err(|e| e.to_string())?;
+    Ok(&CANCELLED)
+}
+
 pub fn stream(command: &mut Command, timeout: Duration, cancelled: &AtomicBool) -> Result<()> {
     if cancelled.load(Ordering::Relaxed) {
         return Err("operação cancelada.".into());
