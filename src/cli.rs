@@ -68,15 +68,23 @@ Opções:
   --timeout SEGUNDOS     Prazo por chamada, padrão 120.
   -h, --help             Exibir ajuda.
 ";
+const RELEASE_HELP: &str = "Uso: clean-dev-cycle release check --revision SHA
+     clean-dev-cycle release publish --revision SHA [--asset CAMINHO]...
+
+check verifica versão, notas e conteúdo sem IA ou alterações no workspace.
+publish é executado no GitHub Actions após todos os checks, sobre o SHA aprovado.
+Cada --asset anexa um arquivo à release. Repetir a publicação retoma uma
+release incompleta sem substituir tags, notas ou assets já enviados.
+";
 
 pub struct CommitOptions {
+    pub dry_run: bool,
+    pub yes: bool,
     pub generation: Options,
     pub message: Option<String>,
     pub entry_file: Option<PathBuf>,
 }
 pub struct Options {
-    pub dry_run: bool,
-    pub yes: bool,
     pub context_file: Option<PathBuf>,
     pub model: Option<OsString>,
     pub codex: OsString,
@@ -85,9 +93,6 @@ pub struct Options {
 pub enum CheckCommitInput {
     MessageFile(PathBuf),
     Range { from: OsString, to: OsString },
-}
-pub struct CheckCommitOptions {
-    pub input: CheckCommitInput,
 }
 pub struct ChangelogOptions {
     pub from: OsString,
@@ -100,7 +105,7 @@ pub enum Action {
     Version,
     Commit(CommitOptions),
     Submit(OsString),
-    CheckCommit(CheckCommitOptions),
+    CheckCommit(CheckCommitInput),
     Changelog(ChangelogOptions),
     Release {
         publish: bool,
@@ -115,21 +120,13 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
     }
     let command = arguments.remove(0);
     if command == "release" {
-        const HELP: &str = "Uso: clean-dev-cycle release check --revision SHA
-     clean-dev-cycle release publish --revision SHA [--asset CAMINHO]...
-
-check verifica versão, notas e conteúdo sem IA ou alterações no workspace.
-publish é executado no GitHub Actions após todos os checks, sobre o SHA aprovado.
-Cada --asset anexa um arquivo à release. Repetir a publicação retoma uma
-release incompleta sem substituir tags, notas ou assets já enviados.
-";
         if arguments.iter().any(|a| a == "--help" || a == "-h") {
-            return Ok(Action::Help(HELP));
+            return Ok(Action::Help(RELEASE_HELP));
         }
         let publish = match arguments.first().and_then(|a| a.to_str()) {
             Some("check") => false,
             Some("publish") => true,
-            _ => return Err(HELP.into()),
+            _ => return Err(RELEASE_HELP.into()),
         };
         let mut revision = None;
         let mut assets = Vec::new();
@@ -138,16 +135,16 @@ release incompleta sem substituir tags, notas ou assets já enviados.
             let value = rest
                 .next()
                 .filter(|v| !v.is_empty())
-                .ok_or_else(|| HELP.to_owned())?;
+                .ok_or_else(|| RELEASE_HELP.to_owned())?;
             match option.to_str() {
                 Some("--revision") if revision.is_none() => revision = Some(value),
                 Some("--asset") if publish => assets.push(PathBuf::from(value)),
-                _ => return Err(HELP.into()),
+                _ => return Err(RELEASE_HELP.into()),
             }
         }
         return Ok(Action::Release {
             publish,
-            revision: revision.ok_or_else(|| HELP.to_owned())?,
+            revision: revision.ok_or_else(|| RELEASE_HELP.to_owned())?,
             assets,
         });
     }
@@ -173,9 +170,8 @@ release incompleta sem substituir tags, notas ou assets já enviados.
     if arguments.len() == 1 && matches!(arguments[0].to_str(), Some("-h" | "--help")) {
         return Ok(Action::Help(help));
     }
+    let (mut dry_run, mut yes) = (false, false);
     let mut generation = Options {
-        dry_run: false,
-        yes: false,
         context_file: None,
         model: None,
         codex: "codex".into(),
@@ -221,11 +217,11 @@ release incompleta sem substituir tags, notas ou assets já enviados.
         }
         match name {
             "--dry-run" => {
-                generation.dry_run = true;
+                dry_run = true;
                 continue;
             }
             "--yes" => {
-                generation.yes = true;
+                yes = true;
                 continue;
             }
             _ => {}
@@ -263,6 +259,8 @@ release incompleta sem substituir tags, notas ou assets já enviados.
     }
     match command.to_str().unwrap() {
         "commit" => Ok(Action::Commit(CommitOptions {
+            dry_run,
+            yes,
             generation,
             message: manual_message,
             entry_file,
@@ -278,7 +276,7 @@ release incompleta sem substituir tags, notas ou assets já enviados.
                     );
                 }
             };
-            Ok(Action::CheckCommit(CheckCommitOptions { input }))
+            Ok(Action::CheckCommit(input))
         }
         "changelog" => {
             if entry_file.is_some()

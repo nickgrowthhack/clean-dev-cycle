@@ -47,7 +47,7 @@ pub fn run(options: ChangelogOptions) -> Result<()> {
         let signal = Arc::clone(&cancelled);
         ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))
             .map_err(|e| e.to_string())?;
-        provider::generate_with(
+        provider::generate(
             &options.generation,
             &diff,
             &context,

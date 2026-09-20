@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-pub const MAX_DIFF_BYTES: usize = 128 * 1024;
+const MAX_DIFF_BYTES: usize = 128 * 1024;
 
 pub struct Repository {
     pub root: PathBuf,
@@ -85,22 +85,7 @@ impl Repository {
     }
 
     pub fn diff_between(&self, base: &str, head: &str) -> Result<String> {
-        self.selected_diff(&[base, head], &[])
-    }
-
-    fn selected_diff(&self, selection: &[&str], paths: &[&str]) -> Result<String> {
-        let arguments = |flags: &[&str]| {
-            let mut args = vec!["diff".to_owned()];
-            args.extend(["--ignore-submodules=none", "--no-relative"].map(str::to_owned));
-            args.extend(flags.iter().chain(selection).copied().map(str::to_owned));
-            args.push("--".into());
-            args.extend(paths.iter().copied().map(str::to_owned));
-            args
-        };
-        let read = |flags: &[&str]| {
-            let args = arguments(flags);
-            self.read(&args.iter().map(String::as_str).collect::<Vec<_>>())
-        };
+        let read = |flags: &[&str]| self.read(&diff_arguments(base, head, flags));
         let names = read(&["--name-only", "--no-renames", "-z"])?;
         if names.is_empty() {
             return Err("não há alterações no intervalo selecionado.".into());
@@ -134,20 +119,24 @@ impl Repository {
             );
         }
         let output = process::capture(
-            self.command().args(arguments(&[
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-                "--no-renames",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                "--submodule=short",
-                "--unified=3",
-                "--full-index",
-                "--diff-algorithm=myers",
-                "--no-indent-heuristic",
-                "--inter-hunk-context=0",
-            ])),
+            self.command().args(diff_arguments(
+                base,
+                head,
+                &[
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--no-color",
+                    "--no-renames",
+                    "--src-prefix=a/",
+                    "--dst-prefix=b/",
+                    "--submodule=short",
+                    "--unified=3",
+                    "--full-index",
+                    "--diff-algorithm=myers",
+                    "--no-indent-heuristic",
+                    "--inter-hunk-context=0",
+                ],
+            )),
             Vec::new(),
             Duration::from_secs(30),
             MAX_DIFF_BYTES,
@@ -169,6 +158,13 @@ impl Repository {
         }
         Ok(diff)
     }
+}
+
+fn diff_arguments<'a>(base: &'a str, head: &'a str, flags: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["diff", "--ignore-submodules=none", "--no-relative"];
+    args.extend(flags);
+    args.extend([base, head, "--"]);
+    args
 }
 
 fn sensitive_path(path: &str) -> bool {

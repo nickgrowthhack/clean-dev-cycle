@@ -28,10 +28,6 @@ pub struct Manifest {
     pub notes_hash: String,
 }
 
-pub struct Settings {
-    pub initial_version: Version,
-}
-
 pub struct Prepared {
     pub tree: String,
     pub version: String,
@@ -60,8 +56,9 @@ fn stable(text: &str) -> Result<Version> {
     Ok(version)
 }
 
-// The configuration is read from the commit itself, so every check is deterministic per revision.
-pub fn settings(repo: &Repository, revision: &str) -> Result<Option<Settings>> {
+// Reads [release] from the commit itself, so every check is deterministic per revision.
+// Returns the initial version when releases are enabled.
+pub fn settings(repo: &Repository, revision: &str) -> Result<Option<Version>> {
     let Some(config) = file(repo, revision, CONFIG)? else {
         return Ok(None);
     };
@@ -91,10 +88,7 @@ pub fn settings(repo: &Repository, revision: &str) -> Result<Option<Settings>> {
             stable(text).map_err(|e| format!("release.initial_version: {e}"))?
         }
     };
-    if !enabled {
-        return Ok(None);
-    }
-    Ok(Some(Settings { initial_version }))
+    Ok(enabled.then_some(initial_version))
 }
 
 pub fn eligible(description: &str) -> Result<bool> {
@@ -263,7 +257,7 @@ fn tag_version(tag: &str) -> Result<Version> {
 fn previous_version(
     parent: Option<&Manifest>,
     base_tag: Option<&str>,
-    settings: &Settings,
+    initial: &Version,
 ) -> Result<Version> {
     if let Some(parent) = parent {
         return Version::parse(&parent.version).map_err(|e| e.to_string());
@@ -271,7 +265,7 @@ fn previous_version(
     if let Some(tag) = base_tag {
         return tag_version(tag);
     }
-    Ok(settings.initial_version.clone())
+    Ok(initial.clone())
 }
 
 fn next_version(previous: &Version, description: &str, initial: bool) -> Version {
@@ -291,8 +285,8 @@ pub fn prepare(
     options: &CommitOptions,
     cancelled: &AtomicBool,
 ) -> Result<Option<Prepared>> {
-    let settings = match settings(repo, revision)? {
-        Some(settings) if eligible(description)? => settings,
+    let initial_version = match settings(repo, revision)? {
+        Some(initial) if eligible(description)? => initial,
         _ => {
             if options.entry_file.is_some() {
                 return Err(
@@ -311,7 +305,11 @@ pub fn prepare(
     let initial = parent_manifest.is_none() && published.is_none();
     let base = published.as_ref().map(|(_, sha)| sha.clone());
     let base_tag = published.map(|(tag, _)| tag);
-    let previous = previous_version(parent_manifest.as_ref(), base_tag.as_deref(), &settings)?;
+    let previous = previous_version(
+        parent_manifest.as_ref(),
+        base_tag.as_deref(),
+        &initial_version,
+    )?;
     let next = next_version(&previous, description, initial).to_string();
     let content = normalized(repo, revision)?;
     let fingerprint = fingerprint(repo, &content, base.as_deref(), base_tag.as_deref())?;
@@ -333,7 +331,7 @@ pub fn prepare(
             .map(|p| provider::read_text(p, 16 * 1024))
             .transpose()?
             .unwrap_or_default();
-        provider::generate_with(
+        provider::generate(
             &options.generation,
             &diff,
             &context,
@@ -402,7 +400,7 @@ pub fn prepare(
 }
 
 pub fn check(repo: &Repository, revision: &str) -> Result<Option<(Manifest, String)>> {
-    let Some(settings) = settings(repo, revision)? else {
+    let Some(initial_version) = settings(repo, revision)? else {
         return Ok(None);
     };
     let parent = parent(repo, revision)?;
@@ -431,7 +429,7 @@ pub fn check(repo: &Repository, revision: &str) -> Result<Option<(Manifest, Stri
     let previous = previous_version(
         parent_manifest.as_ref(),
         metadata.base_tag.as_deref(),
-        &settings,
+        &initial_version,
     )?;
     if metadata.schema != 1
         || metadata.parent != parent
@@ -565,9 +563,7 @@ mod tests {
 
     #[test]
     fn previous_version_prefers_pending_stack_then_published_tag_then_start() {
-        let settings = Settings {
-            initial_version: Version::new(1, 2, 0),
-        };
+        let initial = Version::new(1, 2, 0);
         let parent = Manifest {
             schema: 1,
             version: "0.7.0".into(),
@@ -579,18 +575,18 @@ mod tests {
             notes_hash: String::new(),
         };
         assert_eq!(
-            previous_version(Some(&parent), Some("v0.4.0"), &settings).unwrap(),
+            previous_version(Some(&parent), Some("v0.4.0"), &initial).unwrap(),
             Version::new(0, 7, 0)
         );
         assert_eq!(
-            previous_version(None, Some("v0.4.0"), &settings).unwrap(),
+            previous_version(None, Some("v0.4.0"), &initial).unwrap(),
             Version::new(0, 4, 0)
         );
         assert_eq!(
-            previous_version(None, None, &settings).unwrap(),
+            previous_version(None, None, &initial).unwrap(),
             Version::new(1, 2, 0)
         );
-        assert!(previous_version(None, Some("0.4.0"), &settings).is_err());
+        assert!(previous_version(None, Some("0.4.0"), &initial).is_err());
         for invalid in ["0.0.9", "1.0.0-rc1", "1.0.0+build", "x"] {
             assert!(stable(invalid).is_err(), "{invalid}");
         }

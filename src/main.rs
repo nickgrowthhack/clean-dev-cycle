@@ -33,7 +33,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(cli::Action::Commit(options)) => finish(commit::run(options)),
-        Ok(cli::Action::CheckCommit(options)) => finish(check_commit::run(options)),
+        Ok(cli::Action::CheckCommit(input)) => finish(check_commit::run(input)),
         Ok(cli::Action::Submit(revision)) => finish(submit::run(&revision)),
         Ok(cli::Action::Changelog(options)) => finish(changelog::run(options)),
         Ok(cli::Action::Release {

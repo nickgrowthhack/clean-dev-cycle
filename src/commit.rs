@@ -10,7 +10,7 @@ use std::{
 pub fn run(options: CommitOptions) -> Result<()> {
     let repository = Jujutsu::discover()?;
     let generation = &options.generation;
-    if !generation.dry_run && !generation.yes && !io::stdin().is_terminal() {
+    if !options.dry_run && !options.yes && !io::stdin().is_terminal() {
         return Err("a confirmação exige um terminal. Use --dry-run ou --yes.".into());
     }
     repository.ensure_configured_identity()?;
@@ -33,7 +33,14 @@ pub fn run(options: CommitOptions) -> Result<()> {
             snapshot.revision.change
         );
         let diff = repository.diff(&snapshot.revision)?;
-        provider::generate(generation, &diff, &context, &cancelled)?
+        provider::generate(
+            generation,
+            &diff,
+            &context,
+            &cancelled,
+            provider::INSTRUCTIONS,
+            message::validate,
+        )?
     };
     if snapshot.revision.parents.len() != 1
         || repository
@@ -51,7 +58,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
     }
     repository.ensure_unchanged(&snapshot)?;
     println!("\nMensagem proposta:\n\n{generated}\n");
-    let reviewed = if generation.yes || generation.dry_run {
+    let reviewed = if options.yes || options.dry_run {
         Some(generated)
     } else {
         review(
@@ -83,10 +90,10 @@ pub fn run(options: CommitOptions) -> Result<()> {
             "\nVersão proposta: {}\n\n{}\n",
             prepared.version, prepared.notes
         );
-        if generation.dry_run {
+        if options.dry_run {
             return Ok(());
         }
-        if !generation.yes {
+        if !options.yes {
             let notes = review(
                 prepared.notes.clone(),
                 &mut io::stdin().lock(),
@@ -107,7 +114,7 @@ pub fn run(options: CommitOptions) -> Result<()> {
         }
         repository.finish_release(&snapshot, &reviewed, &prepared.tree, &cancelled)?;
     } else {
-        if generation.dry_run {
+        if options.dry_run {
             return Ok(());
         }
         repository.finish(&snapshot, &reviewed)?;

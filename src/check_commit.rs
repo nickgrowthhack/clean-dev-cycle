@@ -1,13 +1,13 @@
 use crate::{
     Result,
-    cli::{CheckCommitInput, CheckCommitOptions},
+    cli::CheckCommitInput,
     git::Repository,
     message::{self, MAX_MESSAGE_BYTES},
     provider,
 };
 
-pub fn run(options: CheckCommitOptions) -> Result<()> {
-    match options.input {
+pub fn run(input: CheckCommitInput) -> Result<()> {
+    match input {
         CheckCommitInput::MessageFile(path) => {
             let text = provider::read_text(&path, MAX_MESSAGE_BYTES + 2)?;
             message::validate(&text)?;
@@ -21,23 +21,21 @@ pub fn run(options: CheckCommitOptions) -> Result<()> {
             }
             let from = repository.resolve_commit(&from)?;
             let to = repository.resolve_commit(&to)?;
-            validate_range(&repository, &from, &to).map(|_| ())
+            validate_range(&repository, &from, &to)
         }
     }
 }
 
-pub fn validate_range(repository: &Repository, from: &str, to: &str) -> Result<bool> {
+pub fn validate_range(repository: &Repository, from: &str, to: &str) -> Result<()> {
     let range = format!("{from}..{to}");
     let ids = repository.read(&["rev-list", "--reverse", &range, "--"])?;
     let ids = std::str::from_utf8(&ids).map_err(|_| "lista de commits inválida.")?;
     let mut failures = Vec::new();
     let mut count = 0;
-    let mut requires_note = false;
     for id in ids.lines() {
         count += 1;
-        match validate_commit(repository, id) {
-            Ok(impact) => requires_note |= impact,
-            Err(error) => failures.push(format!("{id}: {error}")),
+        if let Err(error) = validate_commit(repository, id) {
+            failures.push(format!("{id}: {error}"));
         }
     }
     if !failures.is_empty() {
@@ -48,10 +46,10 @@ pub fn validate_range(repository: &Repository, from: &str, to: &str) -> Result<b
         ));
     }
     println!("{count} commit(s) válido(s) no intervalo {range}.");
-    Ok(requires_note)
+    Ok(())
 }
 
-fn validate_commit(repository: &Repository, id: &str) -> Result<bool> {
+fn validate_commit(repository: &Repository, id: &str) -> Result<()> {
     // Read the object itself: separators in messages, Git notes and pretty-format settings
     // cannot hide additional commits or manufacture message boundaries.
     let object = repository.read(&["cat-file", "commit", id])?;
@@ -62,7 +60,5 @@ fn validate_commit(repository: &Repository, id: &str) -> Result<bool> {
         + 2;
     let text =
         std::str::from_utf8(&object[start..]).map_err(|_| "a mensagem precisa estar em UTF-8.")?;
-    let message = message::validate(text)?;
-    let parsed = git_conventional::Commit::parse(&message).map_err(|e| e.to_string())?;
-    Ok(parsed.breaking() || ["feat", "fix", "perf"].contains(&parsed.type_().as_str()))
+    message::validate(text).map(|_| ())
 }
