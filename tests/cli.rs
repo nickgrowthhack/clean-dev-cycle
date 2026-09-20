@@ -33,6 +33,10 @@ fn unknown_interfaces_and_ambiguous_arguments_fail_before_execution() {
         vec!["submit", "--revision"],
         vec!["release", "check"],
         vec!["release", "unknown", "--revision", "HEAD"],
+        vec!["release", "check", "--revision", "HEAD", "--asset", "x"],
+        vec!["release", "publish", "--revision", "HEAD", "--asset"],
+        vec!["release", "publish", "--asset", "x"],
+        vec!["release", "publish", "--revision", "a", "--revision", "b"],
         vec!["commit", "--message"],
         vec!["submit", "--revision", "a", "--revision", "b"],
         vec![

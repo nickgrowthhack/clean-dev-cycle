@@ -1,7 +1,9 @@
 # clean-dev-cycle
 
 Uma CLI para concluir mudanças pequenas, verificá-las e publicá-las na main.
-Jujutsu organiza o trabalho local. A única branch é `main`.
+Jujutsu organiza o trabalho local. A única branch é `main`. Serve a qualquer
+repositório, em qualquer linguagem: os checks são comandos do próprio projeto
+e a versão das releases não depende de arquivos de pacote.
 
 ```text
 mudança no jj → commit com versão e notas → submit → checks locais → main → CI → release
@@ -13,15 +15,20 @@ O [guia do fluxo](docs/CYCLE.md) explica stacks, falhas e recuperação.
 
 ## Preparar o ambiente
 
-Instale Git, [Jujutsu 0.45.1](https://github.com/jj-vcs/jj/releases/tag/v0.45.1)
-e o toolchain Rust 1.98.1 indicado em `rust-toolchain.toml`.
+Instale Git e [Jujutsu 0.45.1](https://github.com/jj-vcs/jj/releases/tag/v0.45.1).
 Os executáveis devem estar no PATH. Codex CLI autenticado é necessário apenas
-para gerar mensagens ou notas com IA.
-Para preparar releases, instale também a [GitHub CLI](https://cli.github.com/) e
-autentique com `gh auth login`. O remoto `origin` deve apontar para o GitHub.
+para gerar mensagens ou notas com IA. Para preparar releases, instale também a
+[GitHub CLI](https://cli.github.com/) e autentique com `gh auth login`. O remoto
+`origin` deve apontar para o GitHub.
+
+Para instalar a CLI, baixe o arquivo para Linux ou Windows x86_64 na
+[página de Releases](https://github.com/nickgrowthhack/clean-dev-cycle/releases),
+confira o checksum com o `.sha256` correspondente e coloque o binário no PATH.
+Cada release anexa o binário e o checksum, então nenhum toolchain de compilação
+é necessário no projeto que usa a CLI. Quem tem Rust instalado pode compilar a
+partir do código com `cargo install --path . --locked`.
 
 ```sh
-cargo install --path . --locked
 jj git init --colocate
 jj config set --repo user.name "Seu nome"
 jj config set --repo user.email "seu-email"
@@ -90,21 +97,22 @@ Confira a execução na [página de Actions](https://github.com/nickgrowthhack/c
 
 ## Configurar os checks locais
 
-Versione `clean-dev-cycle.toml` na raiz do projeto. Neste repositório:
+Versione `clean-dev-cycle.toml` na raiz do projeto. Cada lista contém um programa
+e seus argumentos, executados em ordem, sem shell implícito. Use os comandos que
+o projeto já tem, em qualquer linguagem:
 
 ```toml
 [checks]
 commands = [
-    ["cargo", "fmt", "--all", "--", "--check"],
-    ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
-    ["cargo", "test", "--locked"],
+    ["npm", "ci"],
+    ["npm", "test"],
+    ["pwsh", "-NoProfile", "-File", "scripts/check.ps1"],
 ]
 ```
 
-Cada lista contém um programa e seus argumentos, executados em ordem, sem shell
-implícito. Outros projetos podem definir seus próprios comandos. Caminhos como
-`./scripts/check` são relativos à cópia do commit. Para scripts PowerShell, use
-uma lista como `["pwsh", "-NoProfile", "-File", "scripts/check.ps1"]`.
+Caminhos como `./scripts/check` são relativos à cópia do commit. Este repositório,
+por ser escrito em Rust, usa `cargo fmt`, `cargo clippy` e `cargo test`; veja o
+`clean-dev-cycle.toml` na raiz.
 
 Os programas precisam estar instalados. A cópia contém os arquivos versionados,
 sem dependências ou arquivos ignorados do workspace. Inclua a preparação necessária
@@ -172,21 +180,34 @@ Ative por projeto em `clean-dev-cycle.toml`:
 enabled = true
 ```
 
-O suporte inicial é um pacote Rust na raiz, com `Cargo.toml` e `Cargo.lock`
-versionados, versões estáveis a partir de `0.1.0` e `origin` no github.com.
-Workspaces Cargo, prereleases, binários, publicação em crates.io e deploy ficam
-fora deste fluxo. Sem `[release]`, `commit` conclui a mudança apenas com a
-mensagem, e `submit` e o CI não exigem preparação de release.
+Funciona em qualquer repositório com `origin` no github.com, independentemente da
+linguagem. A versão vive em três lugares que a CLI mantém: o manifesto
+`.clean-dev-cycle-release.json`, o `CHANGELOG.md` e a tag `vVERSÃO`. A CLI não
+edita arquivos de pacote como `Cargo.toml`, `package.json` ou `pyproject.toml`.
+Um projeto que precise da versão nesses arquivos lê o manifesto por conta própria.
+Versões são estáveis a partir de `0.1.0`. Prereleases, repositórios com várias
+versões e deploy ficam fora deste fluxo. Sem `[release]`, `commit` conclui a
+mudança apenas com a mensagem, e `submit` e o CI não exigem preparação de release.
 
 `commit` reserva a versão no próprio commit. `feat` incrementa minor, `fix` e
 `perf` incrementam patch. Uma quebra (`!` ou `BREAKING CHANGE`) incrementa minor
 em `0.x` e major a partir de `1.0`. Os demais tipos não iniciam releases, salvo
 quebra explícita. A IA redige as notas, mas não escolhe a versão.
 
-A primeira preparação usa a versão atual do pacote. As seguintes partem da
-versão no pai da mudança, inclusive em stacks ainda não publicados. Reabrir a
-mesma mudança não incrementa novamente. É possível continuar trabalhando
-durante o CI. Uma versão cujo CI falhou pode nunca ganhar tag, deixando uma lacuna.
+A primeira preparação usa `initial_version`, com padrão `0.1.0`:
+
+```toml
+[release]
+enabled = true
+initial_version = "1.4.0"
+```
+
+Um repositório que já publica tags `vVERSÃO` no GitHub continua a sequência a
+partir da última release publicada, sem precisar de `initial_version`. As
+preparações seguintes partem da versão no pai da mudança, inclusive em stacks
+ainda não publicados. Reabrir a mesma mudança não incrementa novamente. É possível
+continuar trabalhando durante o CI. Uma versão cujo CI falhou pode nunca ganhar
+tag, deixando uma lacuna.
 
 As notas sintetizam o diff acumulado desde a última release publicada ancestral,
 consultada pelo `gh` durante a preparação. O intervalo fica fixado nos metadados.
@@ -219,20 +240,26 @@ Essa verificação é determinística, sem IA ou consultas ao GitHub. O workflow
 executa o comando no SHA do evento em Linux e Windows. Após os dois passarem,
 o job `Release` executa `release publish --revision SHA` com `GITHUB_TOKEN`
 e permissão `contents: write`, criando `vVERSÃO` e as mesmas notas no GitHub.
-O runner não precisa de autenticação da IA. Nenhum commit adicional é criado.
+Cada `--asset CAMINHO` anexa um arquivo à release. O runner não precisa de
+autenticação da IA. Nenhum commit adicional é criado.
 
-Repositórios consumidores devem instalar a CLI e adotar a mesma dependência
+Repositórios consumidores devem instalar a CLI no runner, por exemplo baixando
+o binário da release e conferindo o `.sha256`, e adotar a mesma dependência
 entre jobs: publicação somente após todos os checks, checkout do SHA do evento,
 histórico completo e fila de publicação com `queue: max`, sem cancelamento.
 O comando de publicação exige o contexto do GitHub Actions na main.
 
 Se a publicação falhar, reexecute o job `Release` da execução original. Uma tag
-já criada no SHA esperado é reutilizada, e uma release correspondente não é
-duplicada. Tag em outro SHA ou notas divergentes causam erro sem sobrescrita.
+já criada no SHA esperado é reutilizada, uma release correspondente não é
+duplicada e assets já enviados não são reenviados. Tag em outro SHA, notas
+divergentes ou asset com outro tamanho causam erro sem sobrescrita.
 Publicações atrasadas não substituem uma versão maior como `Latest`.
 Se o CI falhar, corrija em uma nova mudança. Nunca mova uma tag já publicada.
 
 ## Desenvolvimento
+
+Esta seção é sobre desenvolver a própria CLI, que é escrita em Rust. Use o
+toolchain 1.98.1 indicado em `rust-toolchain.toml`.
 
 ```sh
 cargo fmt --all -- --check
@@ -244,11 +271,16 @@ Os testes usam Jujutsu real, remotos Git temporários e um provedor de IA simula
 Não acessam a conta do Codex nem o histórico deste repositório.
 Windows usa Rust GNU, com `as`, `dlltool` e as DLLs do Git no PATH.
 `cargo build --release --locked` gera o binário otimizado quando necessário.
+`--version` reflete a versão do manifesto de release, lida em `build.rs`; a
+versão em `Cargo.toml` fica em `0.0.0` e não é usada.
 
 O CI executa formatação e Clippy no Linux e testes/execução da CLI nos dois
 sistemas, em cada push na main. Valida as mensagens de todos os commits do evento.
 A execução manual valida a mensagem do commit selecionado contra seu pai.
+Após a validação, o job `Binário` compila o binário otimizado em Linux e Windows
+e o empacota com `.github/scripts/package.ps1`, gerando arquivo e `.sha256`.
+O job `Release` publica a tag, as notas e anexa esses arquivos.
 O histórico é linear, com force-push e exclusão da main bloqueados, inclusive
 para administradores. O CI não é um requisito prévio para aceitar o push.
 
-A CLI automatiza versão, changelog, tags e GitHub Releases. Deploy é independente.
+A CLI automatiza versão, changelog, tags, GitHub Releases e binários. Deploy é independente.

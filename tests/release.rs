@@ -49,8 +49,6 @@ fn project() -> (Repo, PathBuf) {
         "origin",
         "https://github.com/example/project.git",
     ]);
-    repo.write("Cargo.toml", "# keep this comment\n[package]\nname = 'example'\nversion = '0.1.0' # version comment\n\n[dependencies]\nserde = '1'\n");
-    repo.write("Cargo.lock", "# keep lock comment\nversion = 4\n\n[[package]]\nname = 'example'\nversion = '0.1.0'\ndependencies = ['serde']\n\n[[package]]\nname = 'serde'\nversion = '1.0.0'\nsource = 'registry+https://example.com'\n");
     repo.write("clean-dev-cycle.toml", "[release]\nenabled = true\n");
     repo.write("code.txt", "first feature\n");
     let note = repo.directory.path().join("notes.md");
@@ -86,7 +84,7 @@ fn check(repo: &Repo, revision: &str) {
 }
 
 #[test]
-fn first_release_is_atomic_preserves_comments_and_finishes_original_change() {
+fn first_release_is_atomic_without_package_files_and_finishes_original_change() {
     let (repo, note) = project();
     let change = repo.revision("@", "change_id");
     commit(&repo, &note, "feat: primeira entrega");
@@ -97,11 +95,10 @@ fn first_release_is_atomic_preserves_comments_and_finishes_original_change() {
     let data: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(repo.root.join(MANIFEST)).unwrap()).unwrap();
     assert_eq!(data["version"], "0.1.0");
-    let cargo = fs::read_to_string(repo.root.join("Cargo.toml")).unwrap();
-    assert!(
-        cargo.contains("# keep this comment")
-            && cargo.contains("# version comment")
-            && cargo.contains("serde = '1'")
+    let files = repo.git(&["diff", "--name-only", &repo.base, &sha]);
+    assert_eq!(
+        files.lines().collect::<Vec<_>>(),
+        [MANIFEST, "CHANGELOG.md", "clean-dev-cycle.toml", "code.txt"]
     );
     let log = fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap();
     assert!(log.contains("### Exemplo") && log.contains("## 0.1.0") && log.contains(NOTE.trim()));
@@ -112,7 +109,6 @@ fn first_release_is_atomic_preserves_comments_and_finishes_original_change() {
 fn preview_and_provider_failure_do_not_write_release_files() {
     let (repo, note) = project();
     let before = repo.revision("@", "commit_id");
-    let cargo = fs::read(repo.root.join("Cargo.toml")).unwrap();
     let output = command(
         &repo,
         &[
@@ -129,7 +125,6 @@ fn preview_and_provider_failure_do_not_write_release_files() {
     success(&output);
     assert!(String::from_utf8_lossy(&output.stdout).contains("0.1.0"));
     assert_eq!(repo.revision("@", "commit_id"), before);
-    assert_eq!(fs::read(repo.root.join("Cargo.toml")).unwrap(), cargo);
     assert!(!repo.root.join(MANIFEST).exists());
     let output = command(
         &repo,
@@ -187,15 +182,15 @@ fn checks_reject_code_note_version_and_rebase_tampering() {
                     log.replace("Resultado completo", "Texto diferente"),
                 );
             }
-            "version" => {
-                let cargo = fs::read_to_string(repo.root.join("Cargo.toml")).unwrap();
-                repo.write("Cargo.toml", cargo.replace("0.1.0", "0.9.0"));
-            }
-            "base" => {
+            "version" | "base" => {
                 let mut metadata: serde_json::Value =
                     serde_json::from_str(&fs::read_to_string(repo.root.join(MANIFEST)).unwrap())
                         .unwrap();
-                metadata["parent"] = "0000000000000000000000000000000000000000".into();
+                if field == "version" {
+                    metadata["version"] = "0.9.0".into();
+                } else {
+                    metadata["parent"] = "0000000000000000000000000000000000000000".into();
+                }
                 repo.write(MANIFEST, metadata.to_string());
             }
             _ => unreachable!(),
@@ -251,8 +246,7 @@ fn ai_uses_published_range_preserving_dependency_changes_and_excluding_generated
         r#"[{"tag_name":"v0.1.0","draft":false,"prerelease":false}]"#,
     )
     .unwrap();
-    let cargo = fs::read_to_string(repo.root.join("Cargo.toml")).unwrap();
-    repo.write("Cargo.toml", cargo.replace("serde = '1'", "serde = '2'"));
+    repo.write("deps.txt", "library = 2\n");
     repo.write("code.txt", "next feature\n");
     let output = command(
         &repo,
@@ -271,7 +265,7 @@ fn ai_uses_published_range_preserving_dependency_changes_and_excluding_generated
     .unwrap();
     success(&output);
     let prompt = fs::read_to_string(repo.directory.path().join("calls.prompt")).unwrap();
-    assert!(prompt.contains("serde = '2'") && prompt.contains("next feature"));
+    assert!(prompt.contains("library = 2") && prompt.contains("next feature"));
     assert!(!prompt.contains("Resultado completo") && !prompt.contains("notes_hash"));
     check(&repo, &repo.revision("@-", "commit_id"));
 }
@@ -339,4 +333,98 @@ fn binary_release_uses_manual_notes_and_publication_requires_ci_context() {
         "GitHub Actions",
     );
     assert_eq!(repo.calls(), 0);
+}
+
+#[test]
+fn initial_version_starts_the_first_release_and_invalid_settings_are_rejected() {
+    let (repo, note) = project();
+    repo.write(
+        "clean-dev-cycle.toml",
+        "[release]\nenabled = true\ninitial_version = \"1.2.0\"\n",
+    );
+    commit(&repo, &note, "feat: inicial");
+    let log = fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap();
+    assert!(log.contains("## 1.2.0"));
+    check(&repo, &repo.revision("@-", "commit_id"));
+    repo.write("code.txt", "second feature\n");
+    commit(&repo, &note, "feat: segunda");
+    let log = fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap();
+    assert!(log.contains("## 1.3.0"));
+    check(&repo, &repo.revision("@-", "commit_id"));
+    for (config, expected) in [
+        (
+            "[release]\nenabled = true\ninitial_version = \"1.0.0-rc1\"\n",
+            "initial_version",
+        ),
+        (
+            "[release]\nenabled = true\ninitial_version = \"0.0.1\"\n",
+            "initial_version",
+        ),
+        (
+            "[release]\nenabled = true\ninital_version = \"1.0.0\"\n",
+            "chave desconhecida",
+        ),
+    ] {
+        let (repo, note) = project();
+        repo.write("clean-dev-cycle.toml", config);
+        let output = command(
+            &repo,
+            &[
+                "commit",
+                "--yes",
+                "--message",
+                "feat: inválida",
+                "--entry-file",
+                note.to_str().unwrap(),
+            ],
+        )
+        .output()
+        .unwrap();
+        failure(&output, expected);
+        repo.jj(&["commit", "-m", "feat: manual"]);
+        failure(
+            &repo
+                .cli(&[
+                    "release",
+                    "check",
+                    "--revision",
+                    &repo.revision("@-", "commit_id"),
+                ])
+                .output()
+                .unwrap(),
+            expected,
+        );
+    }
+}
+
+#[test]
+fn published_tags_without_a_manifest_continue_the_version_sequence() {
+    let (repo, note) = project();
+    let list = repo.directory.path().join("releases.json");
+    fs::write(
+        &list,
+        r#"[{"tag_name":"v0.4.0","draft":false,"prerelease":false}]"#,
+    )
+    .unwrap();
+    let output = command(
+        &repo,
+        &[
+            "commit",
+            "--yes",
+            "--message",
+            "feat: continuar",
+            "--entry-file",
+            note.to_str().unwrap(),
+        ],
+    )
+    .env("FAKE_GH_RELEASES", list)
+    .env("FAKE_GH_SHA", &repo.base)
+    .output()
+    .unwrap();
+    success(&output);
+    let data: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(repo.root.join(MANIFEST)).unwrap()).unwrap();
+    assert_eq!(data["version"], "0.5.0");
+    assert_eq!(data["base_tag"], "v0.4.0");
+    check(&repo, &repo.revision("@-", "commit_id"));
 }

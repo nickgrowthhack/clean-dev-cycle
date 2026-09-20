@@ -25,14 +25,22 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(cli::Action::Version) => {
-            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+            println!(
+                "{} {}",
+                env!("CARGO_PKG_NAME"),
+                env!("CLEAN_DEV_CYCLE_VERSION")
+            );
             ExitCode::SUCCESS
         }
         Ok(cli::Action::Commit(options)) => finish(commit::run(options)),
         Ok(cli::Action::CheckCommit(options)) => finish(check_commit::run(options)),
         Ok(cli::Action::Submit(revision)) => finish(submit::run(&revision)),
         Ok(cli::Action::Changelog(options)) => finish(changelog::run(options)),
-        Ok(cli::Action::Release { publish, revision }) => finish(release::run(&revision, publish)),
+        Ok(cli::Action::Release {
+            publish,
+            revision,
+            assets,
+        }) => finish(release::run(&revision, publish, &assets)),
         Err(error) => {
             eprintln!("Erro: {error}\nUse clean-dev-cycle --help para consultar o uso.");
             ExitCode::from(2)

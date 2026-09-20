@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "version": "0.1.0",
-  "parent": "73c346d60061c8fb50eefc04fdc45df5a4b4964f",
-  "base": null,
-  "base_tag": null,
-  "fingerprint": "ff8f0c5f1a6c046681c9f030bd6c7680df4486d0",
-  "message": "feat: automatizar versões, changelog e releases no fluxo com Jujutsu",
-  "notes_hash": "9a90a76ab326521bac855bdb41e9cab0671d18a3"
+  "version": "0.2.0",
+  "parent": "8eb47581a0c1ddb103ce22cf7168638abc73bc43",
+  "base": "fe9bcc9e269e144f3ab79905b9a5cabff460649f",
+  "base_tag": "v0.1.0",
+  "fingerprint": "ed0a8518d872a17d15f529d233be777a9b0b4cd3",
+  "message": "feat(release)!: desvincula versões do Cargo e publica binários para Linux e Windows\n\nUsa o manifesto de release, tags publicadas e initial_version para definir versões. Adiciona --asset à publicação e empacota binários com checksums SHA256 no CI.\n\nBREAKING CHANGE: releases deixam de ler e atualizar versões em Cargo.toml e Cargo.lock. Projetos que dependem dessa sincronização devem ler .clean-dev-cycle-release.json por conta própria. Sem manifesto anterior ou release publicada, a versão inicial usa initial_version, com padrão 0.1.0.",
+  "notes_hash": "1fa799e39a5eb79064ef9f61d0d470c11522924e"
 }

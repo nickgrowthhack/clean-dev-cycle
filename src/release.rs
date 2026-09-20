@@ -4,11 +4,11 @@ use crate::{
 use next_version::VersionUpdater;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{ffi::OsStr, sync::atomic::AtomicBool, time::Duration};
-use toml_edit::{DocumentMut, value};
+use std::{ffi::OsStr, path::PathBuf, sync::atomic::AtomicBool, time::Duration};
 
 pub const MANIFEST: &str = ".clean-dev-cycle-release.json";
-pub const FILES: [&str; 4] = ["Cargo.toml", "Cargo.lock", "CHANGELOG.md", MANIFEST];
+pub const FILES: [&str; 2] = ["CHANGELOG.md", MANIFEST];
+const CONFIG: &str = "clean-dev-cycle.toml";
 const START: &str = "<!-- clean-dev-cycle:release:start -->\n";
 const END: &str = "<!-- clean-dev-cycle:release:end -->\n\n";
 const HEADER: &str = "# Changelog\n\n";
@@ -26,6 +26,10 @@ pub struct Manifest {
     pub fingerprint: String,
     pub message: String,
     pub notes_hash: String,
+}
+
+pub struct Settings {
+    pub initial_version: Version,
 }
 
 pub struct Prepared {
@@ -48,94 +52,55 @@ pub fn file(repo: &Repository, revision: &str, path: &str) -> Result<Option<Stri
         .map_err(|_| format!("{path} precisa estar em UTF-8."))
 }
 
-pub fn enabled(repo: &Repository, revision: &str) -> Result<bool> {
-    let Some(config) = file(repo, revision, "clean-dev-cycle.toml")? else {
-        return Ok(false);
+fn stable(text: &str) -> Result<Version> {
+    let version = Version::parse(text).map_err(|e| e.to_string())?;
+    if !version.pre.is_empty() || !version.build.is_empty() || version < Version::new(0, 1, 0) {
+        return Err("use uma versão estável a partir de 0.1.0, sem metadados de build.".into());
+    }
+    Ok(version)
+}
+
+// The configuration is read from the commit itself, so every check is deterministic per revision.
+pub fn settings(repo: &Repository, revision: &str) -> Result<Option<Settings>> {
+    let Some(config) = file(repo, revision, CONFIG)? else {
+        return Ok(None);
     };
     let config: toml::Table = config
         .parse()
         .map_err(|e| format!("configuração inválida: {e}"))?;
     let Some(release) = config.get("release") else {
-        return Ok(false);
+        return Ok(None);
     };
-    release
+    let release = release.as_table().ok_or("[release] deve ser uma tabela.")?;
+    if let Some(key) = release
+        .keys()
+        .find(|k| !matches!(k.as_str(), "enabled" | "initial_version"))
+    {
+        return Err(format!("chave desconhecida em [release]: {key}."));
+    }
+    let enabled = release
         .get("enabled")
         .and_then(toml::Value::as_bool)
-        .ok_or("release.enabled deve ser booleano.".into())
+        .ok_or("release.enabled deve ser booleano.")?;
+    let initial_version = match release.get("initial_version") {
+        None => Version::new(0, 1, 0),
+        Some(value) => {
+            let text = value
+                .as_str()
+                .ok_or("release.initial_version deve ser um texto.")?;
+            stable(text).map_err(|e| format!("release.initial_version: {e}"))?
+        }
+    };
+    if !enabled {
+        return Ok(None);
+    }
+    Ok(Some(Settings { initial_version }))
 }
 
 pub fn eligible(description: &str) -> Result<bool> {
     let description = message::validate(description)?;
     let commit = git_conventional::Commit::parse(&description).map_err(|e| e.to_string())?;
     Ok(commit.breaking() || matches!(commit.type_().as_str(), "feat" | "fix" | "perf"))
-}
-
-fn version(text: &str) -> Result<(String, Version)> {
-    let doc = document(text)?;
-    if doc.contains_key("workspace") || doc["package"]["version"].as_str().is_none() {
-        return Err(
-            "a primeira versão suporta um pacote Rust na raiz, sem workspace ou versão herdada."
-                .into(),
-        );
-    }
-    let name = doc["package"]["name"]
-        .as_str()
-        .ok_or("Cargo.toml sem package.name.")?;
-    let version =
-        Version::parse(doc["package"]["version"].as_str().unwrap()).map_err(|e| e.to_string())?;
-    if !version.pre.is_empty() || !version.build.is_empty() || version < Version::new(0, 1, 0) {
-        return Err("use uma versão estável a partir de 0.1.0, sem metadados de build.".into());
-    }
-    Ok((name.into(), version))
-}
-
-fn document(text: &str) -> Result<DocumentMut> {
-    text.parse().map_err(|e| format!("TOML inválido: {e}"))
-}
-
-fn set_version(text: &str, name: &str, next: &str, lock: bool) -> Result<String> {
-    let mut doc = document(text)?;
-    let item = if lock {
-        let packages = doc["package"]
-            .as_array_of_tables_mut()
-            .ok_or("Cargo.lock sem pacotes.")?;
-        let indices: Vec<_> = packages
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p["name"].as_str() == Some(name) && !p.contains_key("source"))
-            .map(|(i, _)| i)
-            .collect();
-        if indices.len() != 1 {
-            return Err(
-                "Cargo.lock precisa conter exatamente um pacote raiz correspondente.".into(),
-            );
-        }
-        &mut packages.get_mut(indices[0]).unwrap()["version"]
-    } else {
-        &mut doc["package"]["version"]
-    };
-    let decor = item.as_value().ok_or("versão inválida.")?.decor().clone();
-    *item = value(next);
-    *item.as_value_mut().unwrap().decor_mut() = decor;
-    Ok(doc.to_string())
-}
-
-fn lock_version(text: &str, name: &str) -> Result<String> {
-    let doc = document(text)?;
-    let packages = doc["package"]
-        .as_array_of_tables()
-        .ok_or("Cargo.lock sem pacotes.")?;
-    let values: Vec<_> = packages
-        .iter()
-        .filter(|p| p["name"].as_str() == Some(name) && !p.contains_key("source"))
-        .collect();
-    if values.len() != 1 {
-        return Err("Cargo.lock sem pacote raiz único.".into());
-    }
-    values[0]["version"]
-        .as_str()
-        .map(str::to_owned)
-        .ok_or("versão inválida no Cargo.lock.".into())
 }
 
 fn parent(repo: &Repository, revision: &str) -> Result<String> {
@@ -231,21 +196,9 @@ fn entries(text: &str) -> Result<(String, Vec<String>)> {
     Ok((plain, entries))
 }
 
+// The reviewed content excludes everything the release preparation itself writes.
 fn normalized(repo: &Repository, revision: &str) -> Result<String> {
     let mut edits = vec![(MANIFEST, None)];
-    if let Some(cargo) = file(repo, revision, "Cargo.toml")? {
-        let (name, _) = version(&cargo)?;
-        edits.push((
-            "Cargo.toml",
-            Some(set_version(&cargo, &name, "0.0.0", false)?),
-        ));
-        if let Some(lock) = file(repo, revision, "Cargo.lock")? {
-            edits.push((
-                "Cargo.lock",
-                Some(set_version(&lock, &name, "0.0.0", true)?),
-            ));
-        }
-    }
     if let Some(log) = file(repo, revision, "CHANGELOG.md")? {
         let plain = entries(&log)?.0;
         edits.push((
@@ -257,11 +210,13 @@ fn normalized(repo: &Repository, revision: &str) -> Result<String> {
 }
 
 fn manifest(repo: &Repository, revision: &str) -> Result<Option<Manifest>> {
-    file(repo, revision, MANIFEST)?
-        .map(|s| {
-            serde_json::from_str(&s).map_err(|e| format!("manifesto de release inválido: {e}"))
-        })
-        .transpose()
+    let Some(text) = file(repo, revision, MANIFEST)? else {
+        return Ok(None);
+    };
+    let manifest: Manifest =
+        serde_json::from_str(&text).map_err(|e| format!("manifesto de release inválido: {e}"))?;
+    stable(&manifest.version).map_err(|e| format!("manifesto de release inválido: {e}"))?;
+    Ok(Some(manifest))
 }
 
 fn fingerprint(
@@ -298,6 +253,27 @@ fn latest_published(repo: &Repository, revision: &str) -> Result<Option<(String,
     Ok(None)
 }
 
+fn tag_version(tag: &str) -> Result<Version> {
+    tag.strip_prefix('v')
+        .ok_or("tag de release inválida.".to_owned())
+        .and_then(|v| Version::parse(v).map_err(|e| e.to_string()))
+}
+
+// The version before this change: the pending stack, then the published tag, then the start.
+fn previous_version(
+    parent: Option<&Manifest>,
+    base_tag: Option<&str>,
+    settings: &Settings,
+) -> Result<Version> {
+    if let Some(parent) = parent {
+        return Version::parse(&parent.version).map_err(|e| e.to_string());
+    }
+    if let Some(tag) = base_tag {
+        return tag_version(tag);
+    }
+    Ok(settings.initial_version.clone())
+}
+
 fn next_version(previous: &Version, description: &str, initial: bool) -> Version {
     if initial {
         previous.clone()
@@ -315,29 +291,28 @@ pub fn prepare(
     options: &CommitOptions,
     cancelled: &AtomicBool,
 ) -> Result<Option<Prepared>> {
-    if !enabled(repo, revision)? || !eligible(description)? {
-        if options.entry_file.is_some() {
-            return Err(
-                "--entry-file exige uma mudança elegível com release.enabled = true.".into(),
-            );
+    let settings = match settings(repo, revision)? {
+        Some(settings) if eligible(description)? => settings,
+        _ => {
+            if options.entry_file.is_some() {
+                return Err(
+                    "--entry-file exige uma mudança elegível com release.enabled = true.".into(),
+                );
+            }
+            return Ok(None);
         }
-        return Ok(None);
-    }
+    };
     if repo.read(&["rev-parse", "--is-shallow-repository"])? != b"false\n" {
         return Err("releases exigem histórico completo.".into());
     }
     let parent = parent(repo, revision)?;
-    let cargo = file(repo, revision, "Cargo.toml")?.ok_or("Cargo.toml ausente.")?;
-    let (name, current) = version(&cargo)?;
-    let previous = file(repo, &parent, "Cargo.toml")?
-        .map(|s| version(&s).map(|v| v.1))
-        .transpose()?
-        .unwrap_or(current);
     let published = latest_published(repo, &parent)?;
-    let initial = manifest(repo, &parent)?.is_none() && published.is_none();
-    let next = next_version(&previous, description, initial).to_string();
+    let parent_manifest = manifest(repo, &parent)?;
+    let initial = parent_manifest.is_none() && published.is_none();
     let base = published.as_ref().map(|(_, sha)| sha.clone());
     let base_tag = published.map(|(tag, _)| tag);
+    let previous = previous_version(parent_manifest.as_ref(), base_tag.as_deref(), &settings)?;
+    let next = next_version(&previous, description, initial).to_string();
     let content = normalized(repo, revision)?;
     let fingerprint = fingerprint(repo, &content, base.as_deref(), base_tag.as_deref())?;
     let notes = if let Some(path) = &options.entry_file {
@@ -409,13 +384,7 @@ pub fn prepare(
         message: description.into(),
         notes_hash: hash(repo, notes.as_bytes(), false)?,
     };
-    let lock = file(repo, revision, "Cargo.lock")?.ok_or("Cargo.lock precisa estar versionado.")?;
     let edits = [
-        (
-            "Cargo.toml",
-            Some(set_version(&cargo, &name, &next, false)?),
-        ),
-        ("Cargo.lock", Some(set_version(&lock, &name, &next, true)?)),
         ("CHANGELOG.md", Some(log)),
         (
             MANIFEST,
@@ -433,31 +402,21 @@ pub fn prepare(
 }
 
 pub fn check(repo: &Repository, revision: &str) -> Result<Option<(Manifest, String)>> {
-    if !enabled(repo, revision)? {
+    let Some(settings) = settings(repo, revision)? else {
         return Ok(None);
-    }
+    };
     let parent = parent(repo, revision)?;
     let description = String::from_utf8(repo.read(&["show", "-s", "--format=%B", revision])?)
         .map_err(|e| e.to_string())?;
     let description = message::validate(&description)?;
     let before = file(repo, &parent, MANIFEST)?;
     let after = file(repo, revision, MANIFEST)?;
-    let cargo = file(repo, revision, "Cargo.toml")?.ok_or("Cargo.toml ausente.")?;
-    let (name, current) = version(&cargo)?;
-    let previous = file(repo, &parent, "Cargo.toml")?
-        .map(|s| version(&s).map(|v| v.1))
-        .transpose()?
-        .unwrap_or(current.clone());
-    let lock = file(repo, revision, "Cargo.lock")?.ok_or("Cargo.lock ausente.")?;
-    if lock_version(&lock, &name)? != current.to_string() {
-        return Err("Cargo.lock e Cargo.toml divergem.".into());
-    }
     let old_log = file(repo, &parent, "CHANGELOG.md")?.unwrap_or_else(|| HEADER.into());
     let log = file(repo, revision, "CHANGELOG.md")?.unwrap_or_else(|| HEADER.into());
     let old_entries = entries(&old_log)?.1;
     let all_entries = entries(&log)?.1;
     if !eligible(&description)? {
-        if before != after || previous != current || old_entries != all_entries {
+        if before != after || old_entries != all_entries {
             return Err(format!("mudança interna alterou uma release. {REPAIR}"));
         }
         return Ok(None);
@@ -466,11 +425,17 @@ pub fn check(repo: &Repository, revision: &str) -> Result<Option<(Manifest, Stri
         return Err(format!("release não preparada. {REPAIR}"));
     }
     let metadata = manifest(repo, revision)?.unwrap();
-    let initial = before.is_none() && metadata.base.is_none();
+    let current = Version::parse(&metadata.version).map_err(|e| e.to_string())?;
+    let parent_manifest = manifest(repo, &parent)?;
+    let initial = parent_manifest.is_none() && metadata.base.is_none();
+    let previous = previous_version(
+        parent_manifest.as_ref(),
+        metadata.base_tag.as_deref(),
+        &settings,
+    )?;
     if metadata.schema != 1
         || metadata.parent != parent
         || metadata.message != description
-        || metadata.version != current.to_string()
         || next_version(&previous, &description, initial) != current
         || metadata.fingerprint
             != fingerprint(
@@ -488,8 +453,7 @@ pub fn check(repo: &Repository, revision: &str) -> Result<Option<(Manifest, Stri
         (Some(base), Some(tag)) => {
             let base = repo.resolve_commit(OsStr::new(base))?;
             if repo.read(&["merge-base", &base, &parent])? != format!("{base}\n").as_bytes()
-                || !tag.starts_with('v')
-                || Version::parse(&tag[1..]).is_err()
+                || tag_version(tag).is_err()
             {
                 return Err("base de release inválida.".into());
             }
@@ -539,7 +503,7 @@ pub fn revise_notes(repo: &Repository, prepared: &mut Prepared, notes: &str) -> 
     Ok(())
 }
 
-pub fn run(reference: &OsStr, publish: bool) -> Result<()> {
+pub fn run(reference: &OsStr, publish: bool, assets: &[PathBuf]) -> Result<()> {
     let repo = Repository::discover()?;
     let revision = repo.resolve_commit(reference)?;
     let Some((metadata, notes)) = check(&repo, &revision)? else {
@@ -557,13 +521,12 @@ pub fn run(reference: &OsStr, publish: bool) -> Result<()> {
         if std::env::var("GITHUB_REPOSITORY").as_deref() != Ok(&host.repository) {
             return Err("repositório do evento diverge de origin.".into());
         }
-        github::publish(
-            &host,
-            &revision,
-            &Version::parse(&metadata.version).map_err(|e| e.to_string())?,
-            &notes,
-        )?;
-        println!("Release v{} publicada sobre {revision}.", metadata.version);
+        let version = Version::parse(&metadata.version).map_err(|e| e.to_string())?;
+        let release = github::publish(&host, &revision, &version, &notes)?;
+        println!("Release v{version} publicada sobre {revision}.");
+        if !assets.is_empty() {
+            github::upload_assets(&host, &format!("v{version}"), &release, assets)?;
+        }
     } else {
         println!("Release v{} verificada sobre {revision}.", metadata.version);
     }
@@ -597,6 +560,39 @@ mod tests {
             "docs", "chore", "ci", "test", "style", "build", "refactor", "revert",
         ] {
             assert!(!eligible(&format!("{kind}: ajuste interno")).unwrap());
+        }
+    }
+
+    #[test]
+    fn previous_version_prefers_pending_stack_then_published_tag_then_start() {
+        let settings = Settings {
+            initial_version: Version::new(1, 2, 0),
+        };
+        let parent = Manifest {
+            schema: 1,
+            version: "0.7.0".into(),
+            parent: String::new(),
+            base: None,
+            base_tag: None,
+            fingerprint: String::new(),
+            message: String::new(),
+            notes_hash: String::new(),
+        };
+        assert_eq!(
+            previous_version(Some(&parent), Some("v0.4.0"), &settings).unwrap(),
+            Version::new(0, 7, 0)
+        );
+        assert_eq!(
+            previous_version(None, Some("v0.4.0"), &settings).unwrap(),
+            Version::new(0, 4, 0)
+        );
+        assert_eq!(
+            previous_version(None, None, &settings).unwrap(),
+            Version::new(1, 2, 0)
+        );
+        assert!(previous_version(None, Some("0.4.0"), &settings).is_err());
+        for invalid in ["0.0.9", "1.0.0-rc1", "1.0.0+build", "x"] {
+            assert!(stable(invalid).is_err(), "{invalid}");
         }
     }
 

@@ -102,7 +102,11 @@ pub enum Action {
     Submit(OsString),
     CheckCommit(CheckCommitOptions),
     Changelog(ChangelogOptions),
-    Release { publish: bool, revision: OsString },
+    Release {
+        publish: bool,
+        revision: OsString,
+        assets: Vec<PathBuf>,
+    },
 }
 
 pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
@@ -111,21 +115,40 @@ pub fn parse(mut arguments: Vec<OsString>) -> Result<Action> {
     }
     let command = arguments.remove(0);
     if command == "release" {
-        const HELP: &str = "Uso: clean-dev-cycle release <check|publish> --revision SHA\n\ncheck verifica versão, notas e conteúdo sem IA ou alterações no workspace.\npublish é executado no GitHub Actions após todos os checks, sobre o SHA aprovado.\nRepetir a publicação retoma uma release incompleta sem substituir tags.\n";
+        const HELP: &str = "Uso: clean-dev-cycle release check --revision SHA
+     clean-dev-cycle release publish --revision SHA [--asset CAMINHO]...
+
+check verifica versão, notas e conteúdo sem IA ou alterações no workspace.
+publish é executado no GitHub Actions após todos os checks, sobre o SHA aprovado.
+Cada --asset anexa um arquivo à release. Repetir a publicação retoma uma
+release incompleta sem substituir tags, notas ou assets já enviados.
+";
         if arguments.iter().any(|a| a == "--help" || a == "-h") {
             return Ok(Action::Help(HELP));
         }
-        if arguments.len() != 3 || arguments[1] != "--revision" || arguments[2].is_empty() {
-            return Err(HELP.into());
-        }
-        let publish = match arguments[0].to_str() {
+        let publish = match arguments.first().and_then(|a| a.to_str()) {
             Some("check") => false,
             Some("publish") => true,
             _ => return Err(HELP.into()),
         };
+        let mut revision = None;
+        let mut assets = Vec::new();
+        let mut rest = arguments.drain(1..);
+        while let Some(option) = rest.next() {
+            let value = rest
+                .next()
+                .filter(|v| !v.is_empty())
+                .ok_or_else(|| HELP.to_owned())?;
+            match option.to_str() {
+                Some("--revision") if revision.is_none() => revision = Some(value),
+                Some("--asset") if publish => assets.push(PathBuf::from(value)),
+                _ => return Err(HELP.into()),
+            }
+        }
         return Ok(Action::Release {
             publish,
-            revision: arguments.remove(2),
+            revision: revision.ok_or_else(|| HELP.to_owned())?,
+            assets,
         });
     }
     if arguments.is_empty() {
